@@ -1,0 +1,110 @@
+package com.callbridge.phonea
+
+import android.util.Log
+import org.java_websocket.WebSocket
+import org.java_websocket.handshake.ClientHandshake
+import org.java_websocket.server.WebSocketServer
+import java.net.InetSocketAddress
+
+object SocketServer {
+
+    private val TAG = "CallBridge-SocketServer"
+    private const val PORT = 8765
+    private const val SECRET = "callbridge123" // Change this to a custom secret
+
+    private var server: WebSocketServer? = null
+    private val clients = mutableSetOf<WebSocket>()
+
+    fun start() {
+        if (server != null) return
+
+        server = object : WebSocketServer(InetSocketAddress(PORT)) {
+
+            override fun onOpen(conn: WebSocket, handshake: ClientHandshake) {
+                // Simple auth: first message must be the secret
+                Log.d(TAG, "Client connected: ${conn.remoteSocketAddress}")
+            }
+
+            override fun onClose(conn: WebSocket, code: Int, reason: String, remote: Boolean) {
+                clients.remove(conn)
+                Log.d(TAG, "Client disconnected")
+            }
+
+            override fun onMessage(conn: WebSocket, message: String) {
+                Log.d(TAG, "Received: $message")
+
+                // Auth handshake
+                if (message.startsWith("AUTH|")) {
+                    val token = message.removePrefix("AUTH|")
+                    if (token == SECRET) {
+                        clients.add(conn)
+                        conn.send("AUTH|OK")
+                        Log.d(TAG, "Client authenticated")
+                    } else {
+                        conn.send("AUTH|FAIL")
+                        conn.close()
+                    }
+                    return
+                }
+
+                // Only authenticated clients proceed
+                if (conn !in clients) {
+                    conn.close()
+                    return
+                }
+
+                when (message) {
+                    "ANSWER" -> OngoingCall.answer()
+                    "REJECT" -> OngoingCall.reject()
+                    "HANGUP" -> OngoingCall.hangup()
+                    else -> {
+                        if (message.startsWith("SMS_SEND|")) {
+                            // Format: SMS_SEND|+923001234567|message body here
+                            val parts = message.removePrefix("SMS_SEND|").split("|", limit = 2)
+                            if (parts.size == 2) {
+                                SmsSender.send(parts[0], parts[1])
+                            }
+                        }
+                    }
+                }
+            }
+
+            override fun onError(conn: WebSocket?, ex: Exception) {
+                Log.e(TAG, "WebSocket error: ${ex.message}")
+            }
+
+            override fun onStart() {
+                Log.d(TAG, "WebSocket server started on port $PORT")
+            }
+        }
+
+        server?.start()
+    }
+
+    fun stop() {
+        try {
+            server?.stop()
+            server = null
+            clients.clear()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error stopping server: ${e.message}")
+        }
+    }
+
+    fun sendEvent(event: String) {
+        Log.d(TAG, "Broadcasting: $event")
+        val deadClients = mutableSetOf<WebSocket>()
+        clients.forEach { client ->
+            try {
+                if (client.isOpen) {
+                    client.send(event)
+                } else {
+                    deadClients.add(client)
+                }
+            } catch (e: Exception) {
+                deadClients.add(client)
+            }
+        }
+        clients.removeAll(deadClients)
+    }
+}

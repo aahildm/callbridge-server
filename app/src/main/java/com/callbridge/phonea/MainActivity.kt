@@ -1,0 +1,94 @@
+package com.callbridge.phonea
+
+import android.app.role.RoleManager
+import android.content.Intent
+import android.net.wifi.WifiManager
+import android.os.Build
+import android.os.Bundle
+import android.telecom.TelecomManager
+import android.widget.Button
+import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
+import java.net.Inet4Address
+import java.net.NetworkInterface
+
+class MainActivity : AppCompatActivity() {
+
+    private val REQUEST_DEFAULT_DIALER = 1001
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+
+        val tvStatus = findViewById<TextView>(R.id.tvStatus)
+        val tvIp = findViewById<TextView>(R.id.tvIp)
+        val btnSetDialer = findViewById<Button>(R.id.btnSetDialer)
+        val btnStartService = findViewById<Button>(R.id.btnStartService)
+
+        // Show device IP
+        val ip = getLocalIpAddress()
+        tvIp.text = "This phone's IP: $ip\nPort: 8765\nAudio ports: 9001/9002"
+
+        // Check if already default dialer
+        val telecomManager = getSystemService(TelecomManager::class.java)
+        if (telecomManager.defaultDialerPackage == packageName) {
+            tvStatus.text = "✅ Set as default dialer"
+        } else {
+            tvStatus.text = "⚠️ Not set as default dialer"
+        }
+
+        btnSetDialer.setOnClickListener {
+            promptSetDefaultDialer()
+        }
+
+        btnStartService.setOnClickListener {
+            val serviceIntent = Intent(this, BridgeService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent)
+            } else {
+                startService(serviceIntent)
+            }
+            tvStatus.text = "✅ Service started — ready for Phone B"
+        }
+    }
+
+    private fun promptSetDefaultDialer() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val roleManager = getSystemService(RoleManager::class.java)
+            if (roleManager.isRoleAvailable(RoleManager.ROLE_DIALER)) {
+                val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_DIALER)
+                startActivityForResult(intent, REQUEST_DEFAULT_DIALER)
+            }
+        } else {
+            val intent = Intent(TelecomManager.ACTION_CHANGE_DEFAULT_DIALER)
+                .putExtra(TelecomManager.EXTRA_CHANGE_DEFAULT_DIALER_PACKAGE_NAME, packageName)
+            startActivityForResult(intent, REQUEST_DEFAULT_DIALER)
+        }
+    }
+
+    private fun getLocalIpAddress(): String {
+        try {
+            val interfaces = NetworkInterface.getNetworkInterfaces()
+            for (intf in interfaces) {
+                for (addr in intf.inetAddresses) {
+                    if (!addr.isLoopbackAddress && addr is Inet4Address) {
+                        return addr.hostAddress ?: "Unknown"
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return "Unknown"
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_DEFAULT_DIALER) {
+            val telecomManager = getSystemService(TelecomManager::class.java)
+            val status = if (telecomManager.defaultDialerPackage == packageName)
+                "✅ Set as default dialer" else "❌ Not set as default dialer"
+            findViewById<TextView>(R.id.tvStatus).text = status
+        }
+    }
+}
