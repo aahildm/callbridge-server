@@ -45,13 +45,10 @@ class MainActivity : AppCompatActivity() {
         val ip = getLocalIpAddress()
         tvIp.text = "This phone's IP: $ip\nPort: 8765\nAudio ports: 9001/9002"
 
-        // Check if already default dialer
-        val telecomManager = getSystemService(TelecomManager::class.java)
-        if (telecomManager.defaultDialerPackage == packageName) {
-            tvStatus.text = "✅ Set as default dialer"
-        } else {
-            tvStatus.text = "⚠️ Not set as default dialer"
-        }
+        // Request permissions first — checking defaultDialerPackage requires
+        // READ_PHONE_STATE to already be granted, or it throws SecurityException.
+        requestPermissionsIfNeeded()
+        updateDialerStatus(tvStatus)
 
         btnSetDialer.setOnClickListener {
             promptSetDefaultDialer()
@@ -66,8 +63,21 @@ class MainActivity : AppCompatActivity() {
             }
             tvStatus.text = "✅ Service started — ready for Phone B"
         }
+    }
 
-        requestPermissionsIfNeeded()
+    private fun updateDialerStatus(tvStatus: TextView) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            tvStatus.text = "⚠️ Grant permissions to continue"
+            return
+        }
+        val telecomManager = getSystemService(TelecomManager::class.java)
+        tvStatus.text = if (telecomManager.defaultDialerPackage == packageName) {
+            "✅ Set as default dialer"
+        } else {
+            "⚠️ Not set as default dialer"
+        }
     }
 
     private fun requestPermissionsIfNeeded() {
@@ -76,6 +86,17 @@ class MainActivity : AppCompatActivity() {
         }
         if (missing.isNotEmpty()) {
             ActivityCompat.requestPermissions(this, missing.toTypedArray(), REQUEST_PERMISSIONS)
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQUEST_PERMISSIONS) {
+            updateDialerStatus(findViewById(R.id.tvStatus))
         }
     }
 
@@ -112,10 +133,7 @@ class MainActivity : AppCompatActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQUEST_DEFAULT_DIALER) {
-            val telecomManager = getSystemService(TelecomManager::class.java)
-            val status = if (telecomManager.defaultDialerPackage == packageName)
-                "✅ Set as default dialer" else "❌ Not set as default dialer"
-            findViewById<TextView>(R.id.tvStatus).text = status
+            updateDialerStatus(findViewById(R.id.tvStatus))
         }
     }
 }
