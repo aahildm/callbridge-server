@@ -1,7 +1,9 @@
 package com.callbridge.phonea
 
+import android.Manifest
 import android.app.role.RoleManager
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
@@ -9,12 +11,26 @@ import android.telecom.TelecomManager
 import android.widget.Button
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import java.net.Inet4Address
 import java.net.NetworkInterface
 
 class MainActivity : AppCompatActivity() {
 
     private val REQUEST_DEFAULT_DIALER = 1001
+    private val REQUEST_PERMISSIONS = 1002
+
+    private val PERMISSIONS = arrayOf(
+        Manifest.permission.READ_PHONE_STATE,
+        Manifest.permission.READ_CALL_LOG,
+        Manifest.permission.CALL_PHONE,
+        Manifest.permission.READ_CONTACTS,
+        Manifest.permission.RECEIVE_SMS,
+        Manifest.permission.READ_SMS,
+        Manifest.permission.SEND_SMS,
+        Manifest.permission.RECORD_AUDIO
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -49,6 +65,17 @@ class MainActivity : AppCompatActivity() {
                 startService(serviceIntent)
             }
             tvStatus.text = "✅ Service started — ready for Phone B"
+        }
+
+        requestPermissionsIfNeeded()
+    }
+
+    private fun requestPermissionsIfNeeded() {
+        val missing = PERMISSIONS.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isNotEmpty()) {
+            ActivityCompat.requestPermissions(this, missing.toTypedArray(), REQUEST_PERMISSIONS)
         }
     }
 

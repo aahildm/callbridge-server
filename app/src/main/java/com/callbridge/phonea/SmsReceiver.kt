@@ -23,6 +23,6 @@ class SmsReceiver : BroadcastReceiver() {
 
         // Forward to Phone B via WebSocket
         // Format: SMS_IN|sender|timestamp|body
-        SocketServer.sendEvent("SMS_IN|$sender|$timestamp|$body")
+        ProtocolHandler.broadcast("SMS_IN|$sender|$timestamp|$body")
     }
 }

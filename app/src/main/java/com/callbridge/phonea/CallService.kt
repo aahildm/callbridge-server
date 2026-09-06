@@ -13,20 +13,20 @@ class CallService : InCallService() {
             Log.d(TAG, "Call state changed: $state")
             when (state) {
                 Call.STATE_RINGING -> {
-                    SocketServer.sendEvent("RING|${OngoingCall.getCallerNumber()}")
+                    ProtocolHandler.broadcast("RING|${OngoingCall.getCallerNumber()}")
                 }
                 Call.STATE_ACTIVE -> {
-                    SocketServer.sendEvent("STATE|ACTIVE")
+                    ProtocolHandler.broadcast("STATE|ACTIVE")
                     // Start audio bridge when call is active
                     AudioBridge.start()
                 }
                 Call.STATE_DISCONNECTED -> {
-                    SocketServer.sendEvent("ENDED")
+                    ProtocolHandler.broadcast("ENDED")
                     AudioBridge.stop()
                     OngoingCall.clear()
                 }
                 Call.STATE_HOLDING -> {
-                    SocketServer.sendEvent("STATE|HOLDING")
+                    ProtocolHandler.broadcast("STATE|HOLDING")
                 }
             }
         }
@@ -38,14 +38,14 @@ class CallService : InCallService() {
         call.registerCallback(callCallback)
 
         if (call.state == Call.STATE_RINGING) {
-            SocketServer.sendEvent("RING|${OngoingCall.getCallerNumber()}")
+            ProtocolHandler.broadcast("RING|${OngoingCall.getCallerNumber()}")
         }
     }
 
     override fun onCallRemoved(call: Call) {
         Log.d(TAG, "Call removed")
         call.unregisterCallback(callCallback)
-        SocketServer.sendEvent("ENDED")
+        ProtocolHandler.broadcast("ENDED")
         AudioBridge.stop()
         OngoingCall.clear()
     }

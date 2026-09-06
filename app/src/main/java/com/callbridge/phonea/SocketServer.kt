@@ -10,7 +10,6 @@ object SocketServer {
 
     private val TAG = "CallBridge-SocketServer"
     private const val PORT = 8765
-    private const val SECRET = "callbridge123" // Change this to a custom secret
 
     private var server: WebSocketServer? = null
     private val clients = mutableSetOf<WebSocket>()
@@ -36,7 +35,7 @@ object SocketServer {
                 // Auth handshake
                 if (message.startsWith("AUTH|")) {
                     val token = message.removePrefix("AUTH|")
-                    if (token == SECRET) {
+                    if (token == ProtocolHandler.SECRET) {
                         clients.add(conn)
                         conn.send("AUTH|OK")
                         Log.d(TAG, "Client authenticated")
@@ -53,20 +52,7 @@ object SocketServer {
                     return
                 }
 
-                when (message) {
-                    "ANSWER" -> OngoingCall.answer()
-                    "REJECT" -> OngoingCall.reject()
-                    "HANGUP" -> OngoingCall.hangup()
-                    else -> {
-                        if (message.startsWith("SMS_SEND|")) {
-                            // Format: SMS_SEND|+923001234567|message body here
-                            val parts = message.removePrefix("SMS_SEND|").split("|", limit = 2)
-                            if (parts.size == 2) {
-                                SmsSender.send(parts[0], parts[1])
-                            }
-                        }
-                    }
-                }
+                ProtocolHandler.handle(message)
             }
 
             override fun onError(conn: WebSocket?, ex: Exception) {

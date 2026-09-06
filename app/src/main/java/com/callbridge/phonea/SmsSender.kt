@@ -16,10 +16,10 @@ object SmsSender {
                 smsManager.sendMultipartTextMessage(number, null, parts, null, null)
             }
             Log.d(TAG, "SMS sent to $number")
-            SocketServer.sendEvent("SMS_SENT|$number")
+            ProtocolHandler.broadcast("SMS_SENT|$number")
         } catch (e: Exception) {
             Log.e(TAG, "SMS send failed: ${e.message}")
-            SocketServer.sendEvent("SMS_FAIL|$number|${e.message}")
+            ProtocolHandler.broadcast("SMS_FAIL|$number|${e.message}")
         }
     }
 }

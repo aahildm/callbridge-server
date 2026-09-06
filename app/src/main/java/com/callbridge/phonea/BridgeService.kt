@@ -20,6 +20,7 @@ class BridgeService : Service() {
         createNotificationChannel()
         startForeground(NOTIF_ID, buildNotification())
         SocketServer.start()
+        BluetoothServer.start()
         Log.d(TAG, "BridgeService started")
     }
 
@@ -31,6 +32,7 @@ class BridgeService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         SocketServer.stop()
+        BluetoothServer.stop()
         AudioBridge.stop()
         Log.d(TAG, "BridgeService stopped — will restart via START_STICKY")
     }
