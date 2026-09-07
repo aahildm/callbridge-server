@@ -19,13 +19,14 @@ class BridgeService : Service() {
         super.onCreate()
         createNotificationChannel()
         startForeground(NOTIF_ID, buildNotification())
+        // Pass context to SmsSender for API 31+ compatibility
+        SmsSender.appContext = applicationContext
         SocketServer.start()
         BluetoothServer.start()
         Log.d(TAG, "BridgeService started")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // If killed, restart automatically
         return START_STICKY
     }
 
@@ -34,7 +35,7 @@ class BridgeService : Service() {
         SocketServer.stop()
         BluetoothServer.stop()
         AudioBridge.stop()
-        Log.d(TAG, "BridgeService stopped — will restart via START_STICKY")
+        Log.d(TAG, "BridgeService stopped")
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

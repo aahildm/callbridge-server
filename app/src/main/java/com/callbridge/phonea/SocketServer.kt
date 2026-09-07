@@ -20,8 +20,10 @@ object SocketServer {
         server = object : WebSocketServer(InetSocketAddress(PORT)) {
 
             override fun onOpen(conn: WebSocket, handshake: ClientHandshake) {
-                // Simple auth: first message must be the secret
                 Log.d(TAG, "Client connected: ${conn.remoteSocketAddress}")
+                // Store client IP so AudioBridge can send UDP audio back
+                AudioBridge.phoneBIp = conn.remoteSocketAddress?.address?.hostAddress
+                Log.d(TAG, "Phone B IP captured: ${AudioBridge.phoneBIp}")
             }
 
             override fun onClose(conn: WebSocket, code: Int, reason: String, remote: Boolean) {
@@ -32,7 +34,6 @@ object SocketServer {
             override fun onMessage(conn: WebSocket, message: String) {
                 Log.d(TAG, "Received: $message")
 
-                // Auth handshake
                 if (message.startsWith("AUTH|")) {
                     val token = message.removePrefix("AUTH|")
                     if (token == ProtocolHandler.SECRET) {
@@ -46,7 +47,6 @@ object SocketServer {
                     return
                 }
 
-                // Only authenticated clients proceed
                 if (conn !in clients) {
                     conn.close()
                     return
