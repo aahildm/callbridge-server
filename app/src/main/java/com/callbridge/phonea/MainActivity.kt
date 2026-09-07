@@ -2,6 +2,8 @@ package com.callbridge.phonea
 
 import android.Manifest
 import android.app.role.RoleManager
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.wifi.WifiManager
@@ -10,6 +12,7 @@ import android.os.Bundle
 import android.telecom.TelecomManager
 import android.widget.Button
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -32,6 +35,8 @@ class MainActivity : AppCompatActivity() {
         Manifest.permission.RECORD_AUDIO
     )
 
+    private var localIp = ""
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -40,19 +45,21 @@ class MainActivity : AppCompatActivity() {
         val tvIp = findViewById<TextView>(R.id.tvIp)
         val btnSetDialer = findViewById<Button>(R.id.btnSetDialer)
         val btnStartService = findViewById<Button>(R.id.btnStartService)
+        val btnCopyIp = findViewById<Button>(R.id.btnCopyIp)
 
-        // Show device IP
-        val ip = getLocalIpAddress()
-        tvIp.text = "This phone's IP: $ip\nPort: 8765\nAudio ports: 9001/9002"
+        localIp = getLocalIpAddress()
+        tvIp.text = "This phone's IP: $localIp\nPort: 8765\nAudio ports: 9001/9002"
 
-        // Request permissions first — checking defaultDialerPackage requires
-        // READ_PHONE_STATE to already be granted, or it throws SecurityException.
+        btnCopyIp.setOnClickListener {
+            val clipboard = getSystemService(ClipboardManager::class.java)
+            clipboard?.setPrimaryClip(ClipData.newPlainText("Phone A IP", localIp))
+            Toast.makeText(this, "IP copied: $localIp", Toast.LENGTH_SHORT).show()
+        }
+
         requestPermissionsIfNeeded()
         updateDialerStatus(tvStatus)
 
-        btnSetDialer.setOnClickListener {
-            promptSetDefaultDialer()
-        }
+        btnSetDialer.setOnClickListener { promptSetDefaultDialer() }
 
         btnStartService.setOnClickListener {
             val serviceIntent = Intent(this, BridgeService::class.java)
@@ -116,8 +123,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun getLocalIpAddress(): String {
         try {
-            val interfaces = NetworkInterface.getNetworkInterfaces()
-            for (intf in interfaces) {
+            for (intf in NetworkInterface.getNetworkInterfaces()) {
                 for (addr in intf.inetAddresses) {
                     if (!addr.isLoopbackAddress && addr is Inet4Address) {
                         return addr.hostAddress ?: "Unknown"

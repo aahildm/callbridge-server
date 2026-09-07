@@ -22,6 +22,13 @@
         android:padding="12dp"
         android:background="#F0F0F0"
         android:fontFamily="monospace"
+        android:layout_marginBottom="8dp" />
+
+    <Button
+        android:id="@+id/btnCopyIp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="📋 Copy IP"
         android:layout_marginBottom="16dp" />
 
     <TextView
