@@ -11,12 +11,6 @@ import java.io.OutputStream
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArraySet
 
-/**
- * Bluetooth RFCOMM fallback transport for Phone A. Mirrors the same
- * line-based AUTH|<secret> / AUTH|OK / message protocol used over WiFi
- * in SocketServer, so ProtocolHandler can process messages the same way
- * regardless of which transport they arrived on.
- */
 object BluetoothServer {
 
     private val TAG = "CallBridge-BtServer"
@@ -35,11 +29,11 @@ object BluetoothServer {
     fun start() {
         if (running) return
         val adapter = BluetoothAdapter.getDefaultAdapter() ?: run {
-            Log.e(TAG, "No Bluetooth adapter available")
+            Log.e(TAG, "No Bluetooth adapter")
             return
         }
         if (!adapter.isEnabled) {
-            Log.e(TAG, "Bluetooth is disabled")
+            Log.e(TAG, "Bluetooth disabled")
             return
         }
 
@@ -79,12 +73,20 @@ object BluetoothServer {
             } finally {
                 connections.remove(conn)
                 authenticated.remove(conn)
+                // Clear bluetooth mode when client disconnects
+                AudioBridge.bluetoothMode = false
                 try { socket.close() } catch (_: Exception) {}
             }
         }.start()
     }
 
     private fun onMessage(conn: Connection, message: String) {
+        // Route audio chunks directly to AudioBridge — don't log to avoid spam
+        if (message.startsWith("AUDIO|")) {
+            AudioBridge.onBluetoothAudio(message.removePrefix("AUDIO|"))
+            return
+        }
+
         Log.d(TAG, "Received (BT): $message")
 
         if (message.startsWith("AUTH|")) {
@@ -92,6 +94,8 @@ object BluetoothServer {
             if (token == ProtocolHandler.SECRET) {
                 authenticated.add(conn)
                 sendTo(conn, "AUTH|OK")
+                // Mark audio bridge to use Bluetooth mode
+                AudioBridge.bluetoothMode = true
                 Log.d(TAG, "BT client authenticated")
             } else {
                 sendTo(conn, "AUTH|FAIL")
