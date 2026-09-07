@@ -19,13 +19,15 @@
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Needed to request battery optimization exemption -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <application
         android:allowBackup="true"
         android:label="CallBridge Server"
         android:theme="@style/AppTheme">
 
-        <!-- Required to appear as default Phone app -->
         <activity
             android:name=".MainActivity"
             android:exported="true">
@@ -50,7 +52,6 @@
             </intent-filter>
         </activity>
 
-        <!-- InCallService - core of the app -->
         <service
             android:name=".CallService"
             android:permission="android.permission.BIND_INCALL_SERVICE"
@@ -63,13 +64,11 @@
             </intent-filter>
         </service>
 
-        <!-- WebSocket + Audio foreground service -->
         <service
             android:name=".BridgeService"
             android:foregroundServiceType="microphone"
             android:exported="false" />
 
-        <!-- SMS receiver -->
         <receiver
             android:name=".SmsReceiver"
             android:exported="true"
@@ -79,7 +78,6 @@
             </intent-filter>
         </receiver>
 
-        <!-- Boot receiver to restart service -->
         <receiver
             android:name=".BootReceiver"
             android:exported="true">

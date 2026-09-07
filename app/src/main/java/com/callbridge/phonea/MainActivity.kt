@@ -6,9 +6,10 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.wifi.WifiManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.telecom.TelecomManager
 import android.widget.Button
 import android.widget.TextView
@@ -24,28 +25,38 @@ class MainActivity : AppCompatActivity() {
     private val REQUEST_DEFAULT_DIALER = 1001
     private val REQUEST_PERMISSIONS = 1002
 
-    private val PERMISSIONS = arrayOf(
-        Manifest.permission.READ_PHONE_STATE,
-        Manifest.permission.READ_CALL_LOG,
-        Manifest.permission.CALL_PHONE,
-        Manifest.permission.READ_CONTACTS,
-        Manifest.permission.RECEIVE_SMS,
-        Manifest.permission.READ_SMS,
-        Manifest.permission.SEND_SMS,
-        Manifest.permission.RECORD_AUDIO
-    )
+    private val REQUIRED_PERMISSIONS = buildList {
+        add(Manifest.permission.READ_PHONE_STATE)
+        add(Manifest.permission.READ_CALL_LOG)
+        add(Manifest.permission.CALL_PHONE)
+        add(Manifest.permission.READ_CONTACTS)
+        add(Manifest.permission.RECEIVE_SMS)
+        add(Manifest.permission.READ_SMS)
+        add(Manifest.permission.SEND_SMS)
+        add(Manifest.permission.RECORD_AUDIO)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            add(Manifest.permission.BLUETOOTH_CONNECT)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }.toTypedArray()
 
     private var localIp = ""
+    private var batteryDialogShown = false
+    private lateinit var tvStatus: TextView
+    private lateinit var btnBattery: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        val tvStatus = findViewById<TextView>(R.id.tvStatus)
+        tvStatus = findViewById(R.id.tvStatus)
         val tvIp = findViewById<TextView>(R.id.tvIp)
         val btnSetDialer = findViewById<Button>(R.id.btnSetDialer)
         val btnStartService = findViewById<Button>(R.id.btnStartService)
         val btnCopyIp = findViewById<Button>(R.id.btnCopyIp)
+        btnBattery = findViewById(R.id.btnBatteryFix)
 
         localIp = getLocalIpAddress()
         tvIp.text = "This phone's IP: $localIp\nPort: 8765\nAudio ports: 9001/9002"
@@ -55,9 +66,6 @@ class MainActivity : AppCompatActivity() {
             clipboard?.setPrimaryClip(ClipData.newPlainText("Phone A IP", localIp))
             Toast.makeText(this, "IP copied: $localIp", Toast.LENGTH_SHORT).show()
         }
-
-        requestPermissionsIfNeeded()
-        updateDialerStatus(tvStatus)
 
         btnSetDialer.setOnClickListener { promptSetDefaultDialer() }
 
@@ -70,9 +78,39 @@ class MainActivity : AppCompatActivity() {
             }
             tvStatus.text = "✅ Service started — ready for Phone B"
         }
+
+        btnBattery.setOnClickListener {
+            if (PermissionHelper.isBatteryOptimized(this)) {
+                PermissionHelper.showBatteryDialog(this)
+            } else {
+                PermissionHelper.showLineageOsGuide(this)
+            }
+        }
+
+        requestMissingPermissions()
+        updateDialerStatus()
+        updateBatteryButton()
     }
 
-    private fun updateDialerStatus(tvStatus: TextView) {
+    override fun onResume() {
+        super.onResume()
+        updateDialerStatus()
+        updateBatteryButton()
+        if (!batteryDialogShown && PermissionHelper.isBatteryOptimized(this)) {
+            batteryDialogShown = true
+            PermissionHelper.showBatteryDialog(this)
+        }
+    }
+
+    private fun updateBatteryButton() {
+        btnBattery.text = if (PermissionHelper.isBatteryOptimized(this)) {
+            "⚠️ Fix Battery Optimization"
+        } else {
+            "✅ Battery Optimization OK"
+        }
+    }
+
+    private fun updateDialerStatus() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE)
             != PackageManager.PERMISSION_GRANTED
         ) {
@@ -87,8 +125,8 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun requestPermissionsIfNeeded() {
-        val missing = PERMISSIONS.filter {
+    private fun requestMissingPermissions() {
+        val missing = REQUIRED_PERMISSIONS.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
         if (missing.isNotEmpty()) {
@@ -103,7 +141,7 @@ class MainActivity : AppCompatActivity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQUEST_PERMISSIONS) {
-            updateDialerStatus(findViewById(R.id.tvStatus))
+            updateDialerStatus()
         }
     }
 
@@ -111,8 +149,10 @@ class MainActivity : AppCompatActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val roleManager = getSystemService(RoleManager::class.java)
             if (roleManager.isRoleAvailable(RoleManager.ROLE_DIALER)) {
-                val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_DIALER)
-                startActivityForResult(intent, REQUEST_DEFAULT_DIALER)
+                startActivityForResult(
+                    roleManager.createRequestRoleIntent(RoleManager.ROLE_DIALER),
+                    REQUEST_DEFAULT_DIALER
+                )
             }
         } else {
             val intent = Intent(TelecomManager.ACTION_CHANGE_DEFAULT_DIALER)
@@ -138,8 +178,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQUEST_DEFAULT_DIALER) {
-            updateDialerStatus(findViewById(R.id.tvStatus))
-        }
+        if (requestCode == REQUEST_DEFAULT_DIALER) updateDialerStatus()
     }
 }
