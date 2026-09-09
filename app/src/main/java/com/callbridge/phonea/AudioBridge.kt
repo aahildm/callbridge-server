@@ -6,6 +6,9 @@ import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaRecorder
+import android.media.audiofx.AcousticEchoCanceler
+import android.media.audiofx.AutomaticGainControl
+import android.media.audiofx.NoiseSuppressor
 import android.util.Base64
 import android.util.Log
 import java.net.DatagramPacket
@@ -13,19 +16,21 @@ import java.net.DatagramSocket
 import java.net.InetAddress
 
 /**
- * Bridges audio between Phone A's real GSM call and Phone B.
+ * Acoustic audio bridge between Phone A's real GSM call and Phone B.
  *
- * Phone A puts the call on speaker mode so the actual call audio is
- * acoustically present at the mic, then captures that with AudioRecord to
- * send to Phone B, and plays Phone B's audio through the earpiece/speaker
- * so it's heard by the other party on the call. This avoids fighting with
- * the telecom stack's own audio session, which happens if AudioRecord tries
- * to grab VOICE_COMMUNICATION directly while InCallService already owns it.
+ * Since Android blocks direct call-audio capture (VOICE_CALL source) on
+ * non-rooted, non-system apps, this uses earpiece playback + close-range
+ * mic pickup instead of speaker, which drastically reduces the echo/
+ * feedback that speaker mode causes. Echo cancellation, noise suppression,
+ * and automatic gain control are layered on top to clean up what's left.
+ * This is inherently a workaround, not a true audio tap — quality will
+ * still be a step below a real VoIP bridge, but should be clear enough
+ * for normal conversation at moderate volume.
  */
 object AudioBridge {
 
     private val TAG = "CallBridge-Audio"
-    private const val SAMPLE_RATE = 8000
+    private const val SAMPLE_RATE = 16000 // higher rate helps AEC/NS quality
     private const val CHANNEL_IN = AudioFormat.CHANNEL_IN_MONO
     private const val CHANNEL_OUT = AudioFormat.CHANNEL_OUT_MONO
     private const val ENCODING = AudioFormat.ENCODING_PCM_16BIT
@@ -45,6 +50,11 @@ object AudioBridge {
     private var receiveSocket: DatagramSocket? = null
     private var audioManager: AudioManager? = null
     private var previousSpeakerState = false
+    private var previousVolume = -1
+
+    private var echoCanceler: AcousticEchoCanceler? = null
+    private var noiseSuppressor: NoiseSuppressor? = null
+    private var agc: AutomaticGainControl? = null
 
     fun onBluetoothAudio(base64Chunk: String) {
         if (!running) return
@@ -63,16 +73,24 @@ object AudioBridge {
     fun start() {
         if (running) return
 
-        // Force the real call onto speaker so the mic can acoustically pick up
-        // both sides of the conversation for the bridge to Phone B.
         try {
             audioManager?.let {
                 previousSpeakerState = it.isSpeakerphoneOn
+                previousVolume = it.getStreamVolume(AudioManager.STREAM_VOICE_CALL)
+
                 it.mode = AudioManager.MODE_IN_COMMUNICATION
-                it.isSpeakerphoneOn = true
+                // Earpiece, NOT speaker — far less acoustic leakage into the mic
+                it.isSpeakerphoneOn = false
+
+                // Turn the earpiece volume down a bit — quieter output means
+                // less of it bleeds back into the mic pickup, and AEC has an
+                // easier time canceling what's left.
+                val maxVol = it.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
+                val targetVol = (maxVol * 0.6).toInt().coerceAtLeast(1)
+                it.setStreamVolume(AudioManager.STREAM_VOICE_CALL, targetVol, 0)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to enable speaker: ${e.message}")
+            Log.e(TAG, "Failed to configure audio routing: ${e.message}")
         }
 
         if (bluetoothMode) {
@@ -84,6 +102,37 @@ object AudioBridge {
             }
             startWifi(ip)
         }
+    }
+
+    /** Attaches AEC/NS/AGC to a recorder session if the device supports them. */
+    private fun attachAudioEffects(sessionId: Int) {
+        try {
+            if (AcousticEchoCanceler.isAvailable()) {
+                echoCanceler = AcousticEchoCanceler.create(sessionId)?.apply { enabled = true }
+                Log.d(TAG, "AEC enabled: ${echoCanceler?.enabled}")
+            } else {
+                Log.w(TAG, "AEC not available on this device")
+            }
+            if (NoiseSuppressor.isAvailable()) {
+                noiseSuppressor = NoiseSuppressor.create(sessionId)?.apply { enabled = true }
+                Log.d(TAG, "NS enabled: ${noiseSuppressor?.enabled}")
+            }
+            if (AutomaticGainControl.isAvailable()) {
+                agc = AutomaticGainControl.create(sessionId)?.apply { enabled = true }
+                Log.d(TAG, "AGC enabled: ${agc?.enabled}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to attach audio effects: ${e.message}")
+        }
+    }
+
+    private fun releaseAudioEffects() {
+        try { echoCanceler?.release() } catch (_: Exception) {}
+        try { noiseSuppressor?.release() } catch (_: Exception) {}
+        try { agc?.release() } catch (_: Exception) {}
+        echoCanceler = null
+        noiseSuppressor = null
+        agc = null
     }
 
     private fun startBluetooth() {
@@ -109,13 +158,11 @@ object AudioBridge {
         val bufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_IN, ENCODING)
         sendThread = Thread {
             try {
-                // MIC (not VOICE_COMMUNICATION) so it doesn't fight the telecom
-                // audio session — it just picks up the acoustic sound in the room,
-                // which includes both call parties since speaker mode is on.
                 recorder = AudioRecord(
-                    MediaRecorder.AudioSource.MIC,
+                    MediaRecorder.AudioSource.VOICE_COMMUNICATION,
                     SAMPLE_RATE, CHANNEL_IN, ENCODING, bufferSize
                 )
+                attachAudioEffects(recorder!!.audioSessionId)
                 recorder?.startRecording()
                 val buffer = ByteArray(bufferSize)
                 while (running) {
@@ -128,6 +175,7 @@ object AudioBridge {
             } catch (e: Exception) {
                 Log.e(TAG, "BT send error: ${e.message}")
             } finally {
+                releaseAudioEffects()
                 recorder?.stop()
                 recorder?.release()
             }
@@ -144,9 +192,10 @@ object AudioBridge {
                 sendSocket = DatagramSocket()
                 val address = InetAddress.getByName(ip)
                 recorder = AudioRecord(
-                    MediaRecorder.AudioSource.MIC,
+                    MediaRecorder.AudioSource.VOICE_COMMUNICATION,
                     SAMPLE_RATE, CHANNEL_IN, ENCODING, bufferSize
                 )
+                attachAudioEffects(recorder!!.audioSessionId)
                 recorder?.startRecording()
                 val buffer = ByteArray(bufferSize)
                 while (running) {
@@ -159,6 +208,7 @@ object AudioBridge {
             } catch (e: Exception) {
                 Log.e(TAG, "WiFi send error: ${e.message}")
             } finally {
+                releaseAudioEffects()
                 recorder?.stop()
                 recorder?.release()
                 sendSocket?.close()
@@ -209,13 +259,17 @@ object AudioBridge {
         player?.stop()
         player?.release()
         player = null
+        releaseAudioEffects()
 
-        // Restore original speaker state so a normal (non-bridged) call
-        // afterward behaves as expected.
         try {
-            audioManager?.isSpeakerphoneOn = previousSpeakerState
+            audioManager?.let {
+                it.isSpeakerphoneOn = previousSpeakerState
+                if (previousVolume >= 0) {
+                    it.setStreamVolume(AudioManager.STREAM_VOICE_CALL, previousVolume, 0)
+                }
+            }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to restore speaker state: ${e.message}")
+            Log.e(TAG, "Failed to restore audio state: ${e.message}")
         }
         Log.d(TAG, "Audio bridge stopped")
     }
