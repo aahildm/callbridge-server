@@ -1,5 +1,7 @@
 package com.callbridge.phonea
 
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import org.java_websocket.WebSocket
 import org.java_websocket.handshake.ClientHandshake
@@ -21,8 +23,8 @@ object SocketServer {
 
             override fun onOpen(conn: WebSocket, handshake: ClientHandshake) {
                 Log.d(TAG, "Client connected: ${conn.remoteSocketAddress}")
-                // Store client IP so AudioBridge can send UDP audio back
                 AudioBridge.phoneBIp = conn.remoteSocketAddress?.address?.hostAddress
+                AudioBridge.bluetoothMode = false
                 Log.d(TAG, "Phone B IP captured: ${AudioBridge.phoneBIp}")
             }
 
@@ -40,6 +42,10 @@ object SocketServer {
                         clients.add(conn)
                         conn.send("AUTH|OK")
                         Log.d(TAG, "Client authenticated")
+                        // Send call log shortly after auth so client UI populates
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            CallLogHelper.sendRecentCallLog()
+                        }, 500)
                     } else {
                         conn.send("AUTH|FAIL")
                         conn.close()
@@ -78,15 +84,11 @@ object SocketServer {
     }
 
     fun sendEvent(event: String) {
-        Log.d(TAG, "Broadcasting: $event")
+        Log.d(TAG, "Broadcasting: ${event.take(50)}")
         val deadClients = mutableSetOf<WebSocket>()
         clients.forEach { client ->
             try {
-                if (client.isOpen) {
-                    client.send(event)
-                } else {
-                    deadClients.add(client)
-                }
+                if (client.isOpen) client.send(event) else deadClients.add(client)
             } catch (e: Exception) {
                 deadClients.add(client)
             }

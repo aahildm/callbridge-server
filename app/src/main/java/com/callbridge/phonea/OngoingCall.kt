@@ -28,4 +28,6 @@ object OngoingCall {
     fun getState(): Int {
         return call?.state ?: Call.STATE_DISCONNECTED
     }
+
+    fun hasActiveCall(): Boolean = call != null
 }

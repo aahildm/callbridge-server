@@ -1,5 +1,7 @@
 package com.callbridge.phonea
 
+import android.os.Handler
+import android.os.Looper
 import android.telecom.Call
 import android.telecom.InCallService
 import android.util.Log
@@ -15,15 +17,21 @@ class CallService : InCallService() {
                 Call.STATE_RINGING -> {
                     ProtocolHandler.broadcast("RING|${OngoingCall.getCallerNumber()}")
                 }
+                Call.STATE_DIALING -> {
+                    ProtocolHandler.broadcast("STATE|DIALING")
+                }
                 Call.STATE_ACTIVE -> {
                     ProtocolHandler.broadcast("STATE|ACTIVE")
-                    // Start audio bridge when call is active
                     AudioBridge.start()
                 }
                 Call.STATE_DISCONNECTED -> {
                     ProtocolHandler.broadcast("ENDED")
                     AudioBridge.stop()
                     OngoingCall.clear()
+                    // Send updated call log shortly after call ends
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        CallLogHelper.sendRecentCallLog()
+                    }, 1500)
                 }
                 Call.STATE_HOLDING -> {
                     ProtocolHandler.broadcast("STATE|HOLDING")
@@ -33,12 +41,17 @@ class CallService : InCallService() {
     }
 
     override fun onCallAdded(call: Call) {
-        Log.d(TAG, "Call added: ${call.details.handle}")
+        Log.d(TAG, "Call added: ${call.details.handle}, state=${call.state}")
         OngoingCall.set(call)
         call.registerCallback(callCallback)
 
-        if (call.state == Call.STATE_RINGING) {
-            ProtocolHandler.broadcast("RING|${OngoingCall.getCallerNumber()}")
+        when (call.state) {
+            Call.STATE_RINGING -> ProtocolHandler.broadcast("RING|${OngoingCall.getCallerNumber()}")
+            Call.STATE_DIALING -> ProtocolHandler.broadcast("STATE|DIALING")
+            Call.STATE_ACTIVE -> {
+                ProtocolHandler.broadcast("STATE|ACTIVE")
+                AudioBridge.start()
+            }
         }
     }
 
@@ -48,5 +61,8 @@ class CallService : InCallService() {
         ProtocolHandler.broadcast("ENDED")
         AudioBridge.stop()
         OngoingCall.clear()
+        Handler(Looper.getMainLooper()).postDelayed({
+            CallLogHelper.sendRecentCallLog()
+        }, 1500)
     }
 }

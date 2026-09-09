@@ -19,8 +19,12 @@ class BridgeService : Service() {
         super.onCreate()
         createNotificationChannel()
         startForeground(NOTIF_ID, buildNotification())
-        // Pass context to SmsSender for API 31+ compatibility
+
+        // Inject context into helpers that need it
         SmsSender.appContext = applicationContext
+        DialHelper.appContext = applicationContext
+        CallLogHelper.appContext = applicationContext
+
         SocketServer.start()
         BluetoothServer.start()
         Log.d(TAG, "BridgeService started")
@@ -43,9 +47,7 @@ class BridgeService : Service() {
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
-                CHANNEL_ID,
-                "CallBridge",
-                NotificationManager.IMPORTANCE_LOW
+                CHANNEL_ID, "CallBridge", NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "CallBridge active"
                 setShowBadge(false)
