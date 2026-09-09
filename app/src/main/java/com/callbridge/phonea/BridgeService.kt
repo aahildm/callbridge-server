@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
+import android.media.AudioManager
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
@@ -23,7 +24,7 @@ class BridgeService : Service() {
         SmsSender.appContext = applicationContext
         DialHelper.appContext = applicationContext
         CallLogHelper.appContext = applicationContext
-        CallAudioHelper.appContext = applicationContext
+        AudioBridge.init(getSystemService(AudioManager::class.java))
 
         SocketServer.start()
         BluetoothServer.start()

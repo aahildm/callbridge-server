@@ -12,6 +12,16 @@ import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
 
+/**
+ * Bridges audio between Phone A's real GSM call and Phone B.
+ *
+ * Phone A puts the call on speaker mode so the actual call audio is
+ * acoustically present at the mic, then captures that with AudioRecord to
+ * send to Phone B, and plays Phone B's audio through the earpiece/speaker
+ * so it's heard by the other party on the call. This avoids fighting with
+ * the telecom stack's own audio session, which happens if AudioRecord tries
+ * to grab VOICE_COMMUNICATION directly while InCallService already owns it.
+ */
 object AudioBridge {
 
     private val TAG = "CallBridge-Audio"
@@ -23,7 +33,7 @@ object AudioBridge {
     private const val AUDIO_IN_PORT = 9002
 
     @Volatile var phoneBIp: String? = null
-    @Volatile var bluetoothMode: Boolean = false  // true when Phone B is on Bluetooth
+    @Volatile var bluetoothMode: Boolean = false
 
     private var sendThread: Thread? = null
     private var receiveThread: Thread? = null
@@ -33,8 +43,9 @@ object AudioBridge {
     private var player: AudioTrack? = null
     private var sendSocket: DatagramSocket? = null
     private var receiveSocket: DatagramSocket? = null
+    private var audioManager: AudioManager? = null
+    private var previousSpeakerState = false
 
-    // Called by BluetoothServer when AUDIO| chunk arrives from Phone B
     fun onBluetoothAudio(base64Chunk: String) {
         if (!running) return
         try {
@@ -45,8 +56,24 @@ object AudioBridge {
         }
     }
 
+    fun init(am: AudioManager) {
+        audioManager = am
+    }
+
     fun start() {
         if (running) return
+
+        // Force the real call onto speaker so the mic can acoustically pick up
+        // both sides of the conversation for the bridge to Phone B.
+        try {
+            audioManager?.let {
+                previousSpeakerState = it.isSpeakerphoneOn
+                it.mode = AudioManager.MODE_IN_COMMUNICATION
+                it.isSpeakerphoneOn = true
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to enable speaker: ${e.message}")
+        }
 
         if (bluetoothMode) {
             startBluetooth()
@@ -79,12 +106,14 @@ object AudioBridge {
         )
         player?.play()
 
-        // Send call audio to Phone B via Bluetooth as base64
         val bufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_IN, ENCODING)
         sendThread = Thread {
             try {
+                // MIC (not VOICE_COMMUNICATION) so it doesn't fight the telecom
+                // audio session — it just picks up the acoustic sound in the room,
+                // which includes both call parties since speaker mode is on.
                 recorder = AudioRecord(
-                    MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+                    MediaRecorder.AudioSource.MIC,
                     SAMPLE_RATE, CHANNEL_IN, ENCODING, bufferSize
                 )
                 recorder?.startRecording()
@@ -115,7 +144,7 @@ object AudioBridge {
                 sendSocket = DatagramSocket()
                 val address = InetAddress.getByName(ip)
                 recorder = AudioRecord(
-                    MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+                    MediaRecorder.AudioSource.MIC,
                     SAMPLE_RATE, CHANNEL_IN, ENCODING, bufferSize
                 )
                 recorder?.startRecording()
@@ -180,6 +209,14 @@ object AudioBridge {
         player?.stop()
         player?.release()
         player = null
+
+        // Restore original speaker state so a normal (non-bridged) call
+        // afterward behaves as expected.
+        try {
+            audioManager?.isSpeakerphoneOn = previousSpeakerState
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to restore speaker state: ${e.message}")
+        }
         Log.d(TAG, "Audio bridge stopped")
     }
 }
