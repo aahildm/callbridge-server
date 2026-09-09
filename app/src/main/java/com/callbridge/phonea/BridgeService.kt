@@ -20,10 +20,10 @@ class BridgeService : Service() {
         createNotificationChannel()
         startForeground(NOTIF_ID, buildNotification())
 
-        // Inject context into helpers that need it
         SmsSender.appContext = applicationContext
         DialHelper.appContext = applicationContext
         CallLogHelper.appContext = applicationContext
+        CallAudioHelper.appContext = applicationContext
 
         SocketServer.start()
         BluetoothServer.start()

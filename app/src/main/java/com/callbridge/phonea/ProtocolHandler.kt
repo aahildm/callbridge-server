@@ -12,7 +12,12 @@ object ProtocolHandler {
             message == "ANSWER" -> OngoingCall.answer()
             message == "REJECT" -> OngoingCall.reject()
             message == "HANGUP" -> OngoingCall.hangup()
+            message == "CANCEL_DIAL" -> OngoingCall.hangup() // cancel = hangup while dialing
             message == "GET_CALLLOG" -> CallLogHelper.sendRecentCallLog()
+            message == "MUTE" -> CallAudioHelper.setMute(true)
+            message == "UNMUTE" -> CallAudioHelper.setMute(false)
+            message == "SPEAKER_ON" -> CallAudioHelper.setSpeaker(true)
+            message == "SPEAKER_OFF" -> CallAudioHelper.setSpeaker(false)
             message.startsWith("DIAL|") -> {
                 val number = message.removePrefix("DIAL|")
                 DialHelper.placeCall(number)

@@ -27,8 +27,8 @@ class CallService : InCallService() {
                 Call.STATE_DISCONNECTED -> {
                     ProtocolHandler.broadcast("ENDED")
                     AudioBridge.stop()
+                    CallAudioHelper.reset()
                     OngoingCall.clear()
-                    // Send updated call log shortly after call ends
                     Handler(Looper.getMainLooper()).postDelayed({
                         CallLogHelper.sendRecentCallLog()
                     }, 1500)
@@ -60,6 +60,7 @@ class CallService : InCallService() {
         call.unregisterCallback(callCallback)
         ProtocolHandler.broadcast("ENDED")
         AudioBridge.stop()
+        CallAudioHelper.reset()
         OngoingCall.clear()
         Handler(Looper.getMainLooper()).postDelayed({
             CallLogHelper.sendRecentCallLog()
