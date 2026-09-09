@@ -6,10 +6,8 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
 import android.telecom.TelecomManager
 import android.widget.Button
 import android.widget.TextView
@@ -56,6 +54,7 @@ class MainActivity : AppCompatActivity() {
         val btnSetDialer = findViewById<Button>(R.id.btnSetDialer)
         val btnStartService = findViewById<Button>(R.id.btnStartService)
         val btnCopyIp = findViewById<Button>(R.id.btnCopyIp)
+        val btnRestartApp = findViewById<Button>(R.id.btnRestartApp)
         btnBattery = findViewById(R.id.btnBatteryFix)
 
         localIp = getLocalIpAddress()
@@ -85,6 +84,11 @@ class MainActivity : AppCompatActivity() {
             } else {
                 PermissionHelper.showLineageOsGuide(this)
             }
+        }
+
+        btnRestartApp.setOnClickListener {
+            Toast.makeText(this, "Restarting...", Toast.LENGTH_SHORT).show()
+            RestartHelper.restartApp(this)
         }
 
         requestMissingPermissions()

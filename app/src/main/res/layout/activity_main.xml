@@ -60,6 +60,15 @@
         android:text="⚠️ Fix Battery Optimization"
         android:layout_marginBottom="10dp" />
 
+    <!-- Force restart — clears any stale connection state after updates -->
+    <Button
+        android:id="@+id/btnRestartApp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="🔄 Force Restart App"
+        android:backgroundTint="#FF7043"
+        android:textColor="#FFFFFF" />
+
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
