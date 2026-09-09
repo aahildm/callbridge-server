@@ -31,7 +31,6 @@
         android:text="📋 Copy IP"
         android:layout_marginBottom="12dp" />
 
-    <!-- Live Phone B connection status -->
     <TextView
         android:id="@+id/tvConnectionStatus"
         android:layout_width="match_parent"
@@ -40,6 +39,16 @@
         android:padding="10dp"
         android:background="#FFF3E0"
         android:gravity="center"
+        android:layout_marginBottom="4dp" />
+
+    <!-- Shows whether the Bluetooth server is actually listening -->
+    <TextView
+        android:id="@+id/tvBtListenStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="12sp"
+        android:gravity="center"
+        android:textColor="#888888"
         android:layout_marginBottom="12dp" />
 
     <TextView

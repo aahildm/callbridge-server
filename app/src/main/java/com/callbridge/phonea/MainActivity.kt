@@ -46,12 +46,14 @@ class MainActivity : AppCompatActivity() {
     private var batteryDialogShown = false
     private lateinit var tvStatus: TextView
     private lateinit var tvConnectionStatus: TextView
+    private lateinit var tvBtListenStatus: TextView
     private lateinit var btnBattery: Button
     private val handler = Handler(Looper.getMainLooper())
 
     private val statusPoller = object : Runnable {
         override fun run() {
             updateConnectionStatus()
+            updateBtListenStatus()
             handler.postDelayed(this, 2000)
         }
     }
@@ -62,6 +64,7 @@ class MainActivity : AppCompatActivity() {
 
         tvStatus = findViewById(R.id.tvStatus)
         tvConnectionStatus = findViewById(R.id.tvConnectionStatus)
+        tvBtListenStatus = findViewById(R.id.tvBtListenStatus)
         val tvIp = findViewById<TextView>(R.id.tvIp)
         val btnSetDialer = findViewById<Button>(R.id.btnSetDialer)
         val btnStartService = findViewById<Button>(R.id.btnStartService)
@@ -107,6 +110,7 @@ class MainActivity : AppCompatActivity() {
         updateDialerStatus()
         updateBatteryButton()
         updateConnectionStatus()
+        updateBtListenStatus()
     }
 
     override fun onResume() {
@@ -114,6 +118,7 @@ class MainActivity : AppCompatActivity() {
         updateDialerStatus()
         updateBatteryButton()
         updateConnectionStatus()
+        updateBtListenStatus()
         handler.postDelayed(statusPoller, 2000)
         if (!batteryDialogShown && PermissionHelper.isBatteryOptimized(this)) {
             batteryDialogShown = true
@@ -131,6 +136,18 @@ class MainActivity : AppCompatActivity() {
             "WIFI" -> "✅ Phone B connected — 📶 WiFi"
             "BLUETOOTH" -> "✅ Phone B connected — 🔵 Bluetooth"
             else -> "⚠️ No device connected"
+        }
+    }
+
+    /** Shows exactly what the Bluetooth listener is doing right now —
+     *  this is the ground truth for whether BT can work at all. */
+    private fun updateBtListenStatus() {
+        tvBtListenStatus.text = when (BluetoothServer.listenState) {
+            "LISTENING" -> "🔵 Bluetooth: listening for connections"
+            "BT_DISABLED" -> "🔵 Bluetooth: OFF on this phone — turn it on"
+            "NO_ADAPTER" -> "🔵 Bluetooth: not available on this device"
+            "FAILED" -> "🔵 Bluetooth: failed to start — check logs"
+            else -> "🔵 Bluetooth: not started yet"
         }
     }
 

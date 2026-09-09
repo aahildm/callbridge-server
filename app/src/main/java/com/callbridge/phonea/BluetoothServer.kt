@@ -4,6 +4,8 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothServerSocket
 import android.bluetooth.BluetoothSocket
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -19,6 +21,13 @@ object BluetoothServer {
     private var serverSocket: BluetoothServerSocket? = null
     private var acceptThread: Thread? = null
     private var running = false
+    private val handler = Handler(Looper.getMainLooper())
+
+    // Visible so MainActivity can show exactly what happened, instead of
+    // Bluetooth failing silently with nothing to show for it.
+    // NOT_STARTED, LISTENING, NO_ADAPTER, BT_DISABLED, FAILED
+    @Volatile var listenState: String = "NOT_STARTED"
+        private set
 
     private class Connection(val socket: BluetoothSocket, val out: OutputStream)
 
@@ -28,12 +37,18 @@ object BluetoothServer {
     @SuppressLint("MissingPermission")
     fun start() {
         if (running) return
-        val adapter = BluetoothAdapter.getDefaultAdapter() ?: run {
-            Log.e(TAG, "No Bluetooth adapter")
+        val adapter = BluetoothAdapter.getDefaultAdapter()
+        if (adapter == null) {
+            listenState = "NO_ADAPTER"
+            Log.e(TAG, "No Bluetooth adapter on this device")
             return
         }
         if (!adapter.isEnabled) {
-            Log.e(TAG, "Bluetooth disabled")
+            listenState = "BT_DISABLED"
+            Log.e(TAG, "Bluetooth is disabled — retrying in 3s")
+            // Don't give up — Bluetooth might get turned on moments after
+            // the service starts. Keep checking instead of failing forever.
+            handler.postDelayed({ start() }, 3000)
             return
         }
 
@@ -41,17 +56,22 @@ object BluetoothServer {
         acceptThread = Thread {
             try {
                 serverSocket = adapter.listenUsingRfcommWithServiceRecord("CallBridge", SPP_UUID)
-                Log.d(TAG, "Bluetooth server listening")
+                listenState = "LISTENING"
+                Log.d(TAG, "Bluetooth server listening for connections")
                 while (running) {
                     val socket = try {
                         serverSocket?.accept() ?: break
                     } catch (e: Exception) {
-                        if (running) Log.e(TAG, "Accept failed: ${e.message}")
+                        if (running) {
+                            listenState = "FAILED"
+                            Log.e(TAG, "Accept failed: ${e.message}")
+                        }
                         break
                     }
                     handleClient(socket)
                 }
             } catch (e: Exception) {
+                listenState = "FAILED"
                 Log.e(TAG, "Server error: ${e.message}")
             }
         }
@@ -144,5 +164,6 @@ object BluetoothServer {
         authenticated.clear()
         serverSocket = null
         acceptThread = null
+        listenState = "NOT_STARTED"
     }
 }
