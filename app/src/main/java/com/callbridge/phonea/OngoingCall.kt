@@ -3,17 +3,22 @@ package com.callbridge.phonea
 import android.os.Handler
 import android.os.Looper
 import android.telecom.Call
+import android.util.Log
 
 object OngoingCall {
-    private var call: Call? = null
-    private val handler = Handler(Looper.getMainLooper())
+    private val TAG = "CallBridge-OngoingCall"
+
+    @Volatile private var call: Call? = null
+    private val handler: Handler by lazy { Handler(Looper.getMainLooper()) }
+
+    @Volatile private var pendingHangup = false
+    @Volatile private var hangupRetries = 0
 
     fun set(c: Call) {
         call = c
-        // If a hangup was requested before the call was added, apply it now
         if (pendingHangup) {
             pendingHangup = false
-            call?.disconnect()
+            safeDisconnect(c)
         }
     }
 
@@ -21,31 +26,59 @@ object OngoingCall {
     fun clear() { call = null }
 
     fun answer() {
-        call?.answer(android.telecom.VideoProfile.STATE_AUDIO_ONLY)
+        try {
+            call?.answer(android.telecom.VideoProfile.STATE_AUDIO_ONLY)
+        } catch (e: Exception) {
+            Log.e(TAG, "answer() failed: ${e.message}")
+        }
     }
 
     fun reject() {
-        call?.reject(false, null)
+        try {
+            call?.reject(false, null)
+        } catch (e: Exception) {
+            Log.e(TAG, "reject() failed: ${e.message}")
+        }
     }
 
-    private var pendingHangup = false
-    private var hangupRetries = 0
-
-    /**
-     * Hangs up the current call. If the call hasn't reached CallService yet
-     * (e.g. cancelling right after DIAL), retries for up to 3 seconds instead
-     * of silently doing nothing.
-     */
-    fun hangup() {
-        val c = call
-        if (c != null) {
-            c.disconnect()
-            return
+    fun hold() {
+        try {
+            call?.hold()
+        } catch (e: Exception) {
+            Log.e(TAG, "hold() failed: ${e.message}")
         }
-        // No call yet — mark pending and retry briefly
-        pendingHangup = true
-        hangupRetries = 0
-        retryHangup()
+    }
+
+    fun unhold() {
+        try {
+            call?.unhold()
+        } catch (e: Exception) {
+            Log.e(TAG, "unhold() failed: ${e.message}")
+        }
+    }
+
+    private fun safeDisconnect(c: Call) {
+        try {
+            c.disconnect()
+        } catch (e: Exception) {
+            Log.e(TAG, "disconnect() failed: ${e.message}")
+        }
+    }
+
+    fun hangup() {
+        try {
+            val c = call
+            if (c != null) {
+                pendingHangup = false
+                safeDisconnect(c)
+                return
+            }
+            pendingHangup = true
+            hangupRetries = 0
+            retryHangup()
+        } catch (e: Exception) {
+            Log.e(TAG, "hangup() failed: ${e.message}")
+        }
     }
 
     private fun retryHangup() {
@@ -56,15 +89,24 @@ object OngoingCall {
         val c = call
         if (c != null) {
             pendingHangup = false
-            c.disconnect()
+            safeDisconnect(c)
             return
         }
         hangupRetries++
-        handler.postDelayed({ retryHangup() }, 500)
+        try {
+            handler.postDelayed({ retryHangup() }, 500)
+        } catch (e: Exception) {
+            Log.e(TAG, "retryHangup schedule failed: ${e.message}")
+            pendingHangup = false
+        }
     }
 
     fun getCallerNumber(): String {
-        return call?.details?.handle?.schemeSpecificPart ?: "Unknown"
+        return try {
+            call?.details?.handle?.schemeSpecificPart ?: "Unknown"
+        } catch (e: Exception) {
+            "Unknown"
+        }
     }
 
     fun getState(): Int {
