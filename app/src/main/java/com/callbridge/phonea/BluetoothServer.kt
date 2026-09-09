@@ -73,15 +73,14 @@ object BluetoothServer {
             } finally {
                 connections.remove(conn)
                 authenticated.remove(conn)
-                // Clear bluetooth mode when client disconnects
                 AudioBridge.bluetoothMode = false
+                if (authenticated.isEmpty()) ConnectionStatus.setNone()
                 try { socket.close() } catch (_: Exception) {}
             }
         }.start()
     }
 
     private fun onMessage(conn: Connection, message: String) {
-        // Route audio chunks directly to AudioBridge — don't log to avoid spam
         if (message.startsWith("AUDIO|")) {
             AudioBridge.onBluetoothAudio(message.removePrefix("AUDIO|"))
             return
@@ -94,8 +93,8 @@ object BluetoothServer {
             if (token == ProtocolHandler.SECRET) {
                 authenticated.add(conn)
                 sendTo(conn, "AUTH|OK")
-                // Mark audio bridge to use Bluetooth mode
                 AudioBridge.bluetoothMode = true
+                ConnectionStatus.setBluetooth()
                 Log.d(TAG, "BT client authenticated")
             } else {
                 sendTo(conn, "AUTH|FAIL")

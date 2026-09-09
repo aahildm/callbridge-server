@@ -8,6 +8,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.telecom.TelecomManager
 import android.widget.Button
 import android.widget.TextView
@@ -43,13 +45,23 @@ class MainActivity : AppCompatActivity() {
     private var localIp = ""
     private var batteryDialogShown = false
     private lateinit var tvStatus: TextView
+    private lateinit var tvConnectionStatus: TextView
     private lateinit var btnBattery: Button
+    private val handler = Handler(Looper.getMainLooper())
+
+    private val statusPoller = object : Runnable {
+        override fun run() {
+            updateConnectionStatus()
+            handler.postDelayed(this, 2000)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
         tvStatus = findViewById(R.id.tvStatus)
+        tvConnectionStatus = findViewById(R.id.tvConnectionStatus)
         val tvIp = findViewById<TextView>(R.id.tvIp)
         val btnSetDialer = findViewById<Button>(R.id.btnSetDialer)
         val btnStartService = findViewById<Button>(R.id.btnStartService)
@@ -94,15 +106,31 @@ class MainActivity : AppCompatActivity() {
         requestMissingPermissions()
         updateDialerStatus()
         updateBatteryButton()
+        updateConnectionStatus()
     }
 
     override fun onResume() {
         super.onResume()
         updateDialerStatus()
         updateBatteryButton()
+        updateConnectionStatus()
+        handler.postDelayed(statusPoller, 2000)
         if (!batteryDialogShown && PermissionHelper.isBatteryOptimized(this)) {
             batteryDialogShown = true
             PermissionHelper.showBatteryDialog(this)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        handler.removeCallbacks(statusPoller)
+    }
+
+    private fun updateConnectionStatus() {
+        tvConnectionStatus.text = when (ConnectionStatus.transport) {
+            "WIFI" -> "✅ Phone B connected — 📶 WiFi"
+            "BLUETOOTH" -> "✅ Phone B connected — 🔵 Bluetooth"
+            else -> "⚠️ No device connected"
         }
     }
 

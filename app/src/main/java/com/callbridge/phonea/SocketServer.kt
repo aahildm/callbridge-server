@@ -30,6 +30,7 @@ object SocketServer {
 
             override fun onClose(conn: WebSocket, code: Int, reason: String, remote: Boolean) {
                 clients.remove(conn)
+                if (clients.isEmpty()) ConnectionStatus.setNone()
                 Log.d(TAG, "Client disconnected")
             }
 
@@ -41,8 +42,8 @@ object SocketServer {
                     if (token == ProtocolHandler.SECRET) {
                         clients.add(conn)
                         conn.send("AUTH|OK")
+                        ConnectionStatus.setWifi()
                         Log.d(TAG, "Client authenticated")
-                        // Send call log shortly after auth so client UI populates
                         Handler(Looper.getMainLooper()).postDelayed({
                             CallLogHelper.sendRecentCallLog()
                         }, 500)

@@ -31,6 +31,17 @@
         android:text="📋 Copy IP"
         android:layout_marginBottom="12dp" />
 
+    <!-- Live Phone B connection status -->
+    <TextView
+        android:id="@+id/tvConnectionStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="15sp"
+        android:padding="10dp"
+        android:background="#FFF3E0"
+        android:gravity="center"
+        android:layout_marginBottom="12dp" />
+
     <TextView
         android:id="@+id/tvStatus"
         android:layout_width="match_parent"
@@ -60,7 +71,6 @@
         android:text="⚠️ Fix Battery Optimization"
         android:layout_marginBottom="10dp" />
 
-    <!-- Force restart — clears any stale connection state after updates -->
     <Button
         android:id="@+id/btnRestartApp"
         android:layout_width="match_parent"
