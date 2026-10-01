@@ -2,8 +2,6 @@ package com.callbridge.phonea
 
 import android.Manifest
 import android.app.role.RoleManager
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -17,8 +15,6 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import java.net.Inet4Address
-import java.net.NetworkInterface
 
 class MainActivity : AppCompatActivity() {
 
@@ -42,9 +38,8 @@ class MainActivity : AppCompatActivity() {
         }
     }.toTypedArray()
 
-    private var localIp = ""
     private var batteryDialogShown = false
-    private lateinit var tvStatus: TextView
+    private lateinit var tvDialerStatus: TextView
     private lateinit var tvConnectionStatus: TextView
     private lateinit var tvBtListenStatus: TextView
     private lateinit var btnBattery: Button
@@ -62,24 +57,13 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        tvStatus = findViewById(R.id.tvStatus)
+        tvDialerStatus     = findViewById(R.id.tvStatus)
         tvConnectionStatus = findViewById(R.id.tvConnectionStatus)
-        tvBtListenStatus = findViewById(R.id.tvBtListenStatus)
-        val tvIp = findViewById<TextView>(R.id.tvIp)
-        val btnSetDialer = findViewById<Button>(R.id.btnSetDialer)
+        tvBtListenStatus   = findViewById(R.id.tvBtListenStatus)
+        val btnSetDialer   = findViewById<Button>(R.id.btnSetDialer)
         val btnStartService = findViewById<Button>(R.id.btnStartService)
-        val btnCopyIp = findViewById<Button>(R.id.btnCopyIp)
-        val btnRestartApp = findViewById<Button>(R.id.btnRestartApp)
-        btnBattery = findViewById(R.id.btnBatteryFix)
-
-        localIp = getLocalIpAddress()
-        tvIp.text = "This phone's IP: $localIp\nPort: 8765\nAudio ports: 9001/9002"
-
-        btnCopyIp.setOnClickListener {
-            val clipboard = getSystemService(ClipboardManager::class.java)
-            clipboard?.setPrimaryClip(ClipData.newPlainText("Phone A IP", localIp))
-            Toast.makeText(this, "IP copied: $localIp", Toast.LENGTH_SHORT).show()
-        }
+        val btnRestartApp  = findViewById<Button>(R.id.btnRestartApp)
+        btnBattery         = findViewById(R.id.btnBatteryFix)
 
         btnSetDialer.setOnClickListener { promptSetDefaultDialer() }
 
@@ -90,7 +74,7 @@ class MainActivity : AppCompatActivity() {
             } else {
                 startService(serviceIntent)
             }
-            tvStatus.text = "✅ Service started — ready for Phone B"
+            tvDialerStatus.text = "✅ Service started — ready for Phone B"
         }
 
         btnBattery.setOnClickListener {
@@ -133,20 +117,17 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateConnectionStatus() {
         tvConnectionStatus.text = when (ConnectionStatus.transport) {
-            "WIFI" -> "✅ Phone B connected — 📶 WiFi"
-            "BLUETOOTH" -> "✅ Phone B connected — 🔵 Bluetooth"
+            "BLUETOOTH" -> "✅ Phone B connected via Bluetooth"
             else -> "⚠️ No device connected"
         }
     }
 
-    /** Shows exactly what the Bluetooth listener is doing right now —
-     *  this is the ground truth for whether BT can work at all. */
     private fun updateBtListenStatus() {
         tvBtListenStatus.text = when (BluetoothServer.listenState) {
             "LISTENING" -> "🔵 Bluetooth: listening for connections"
-            "BT_DISABLED" -> "🔵 Bluetooth: OFF on this phone — turn it on"
-            "NO_ADAPTER" -> "🔵 Bluetooth: not available on this device"
-            "FAILED" -> "🔵 Bluetooth: failed to start — check logs"
+            "BT_DISABLED" -> "⚠️ Bluetooth is OFF — turn it on"
+            "NO_ADAPTER" -> "❌ Bluetooth not available on this device"
+            "FAILED" -> "❌ Bluetooth failed to start"
             else -> "🔵 Bluetooth: not started yet"
         }
     }
@@ -161,16 +142,15 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateDialerStatus() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            tvStatus.text = "⚠️ Grant permissions to continue"
+            != PackageManager.PERMISSION_GRANTED) {
+            tvDialerStatus.text = "⚠️ Grant permissions to continue"
             return
         }
         val telecomManager = getSystemService(TelecomManager::class.java)
-        tvStatus.text = if (telecomManager.defaultDialerPackage == packageName) {
+        tvDialerStatus.text = if (telecomManager.defaultDialerPackage == packageName) {
             "✅ Set as default dialer"
         } else {
-            "⚠️ Not set as default dialer"
+            "⚠️ Not set as default dialer — tap below"
         }
     }
 
@@ -184,14 +164,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
+        requestCode: Int, permissions: Array<out String>, grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQUEST_PERMISSIONS) {
-            updateDialerStatus()
-        }
+        if (requestCode == REQUEST_PERMISSIONS) updateDialerStatus()
     }
 
     private fun promptSetDefaultDialer() {
@@ -208,21 +184,6 @@ class MainActivity : AppCompatActivity() {
                 .putExtra(TelecomManager.EXTRA_CHANGE_DEFAULT_DIALER_PACKAGE_NAME, packageName)
             startActivityForResult(intent, REQUEST_DEFAULT_DIALER)
         }
-    }
-
-    private fun getLocalIpAddress(): String {
-        try {
-            for (intf in NetworkInterface.getNetworkInterfaces()) {
-                for (addr in intf.inetAddresses) {
-                    if (!addr.isLoopbackAddress && addr is Inet4Address) {
-                        return addr.hostAddress ?: "Unknown"
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        return "Unknown"
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
