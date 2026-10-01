@@ -20,15 +20,12 @@ class BridgeService : Service() {
         super.onCreate()
         createNotificationChannel()
         startForeground(NOTIF_ID, buildNotification())
-
         SmsSender.appContext = applicationContext
         DialHelper.appContext = applicationContext
         CallLogHelper.appContext = applicationContext
         AudioBridge.init(getSystemService(AudioManager::class.java))
-
-        SocketServer.start()
         BluetoothServer.start()
-        Log.d(TAG, "BridgeService started")
+        Log.d(TAG, "BridgeService started (Bluetooth-only mode)")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -37,7 +34,6 @@ class BridgeService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        SocketServer.stop()
         BluetoothServer.stop()
         AudioBridge.stop()
         Log.d(TAG, "BridgeService stopped")
@@ -49,12 +45,8 @@ class BridgeService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID, "CallBridge", NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "CallBridge active"
-                setShowBadge(false)
-            }
-            getSystemService(NotificationManager::class.java)
-                ?.createNotificationChannel(channel)
+            ).apply { description = "CallBridge active"; setShowBadge(false) }
+            getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
         }
     }
 
@@ -62,18 +54,16 @@ class BridgeService : Service() {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
                 .setContentTitle("CallBridge Active")
-                .setContentText("Listening for calls on port 8765")
+                .setContentText("Waiting for Bluetooth connection")
                 .setSmallIcon(android.R.drawable.ic_menu_call)
-                .setOngoing(true)
-                .build()
+                .setOngoing(true).build()
         } else {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
                 .setContentTitle("CallBridge Active")
-                .setContentText("Listening for calls on port 8765")
+                .setContentText("Waiting for Bluetooth connection")
                 .setSmallIcon(android.R.drawable.ic_menu_call)
-                .setOngoing(true)
-                .build()
+                .setOngoing(true).build()
         }
     }
 }
