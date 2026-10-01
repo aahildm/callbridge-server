@@ -23,7 +23,6 @@ class BridgeService : Service() {
         SmsSender.appContext = applicationContext
         DialHelper.appContext = applicationContext
         CallLogHelper.appContext = applicationContext
-        AudioBridge.init(getSystemService(AudioManager::class.java))
         BluetoothServer.start()
         Log.d(TAG, "BridgeService started (Bluetooth-only mode)")
     }

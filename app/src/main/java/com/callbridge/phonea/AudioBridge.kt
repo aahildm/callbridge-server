@@ -2,7 +2,6 @@ package com.callbridge.phonea
 
 import android.media.AudioAttributes
 import android.media.AudioFormat
-import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaRecorder
@@ -23,9 +22,6 @@ object AudioBridge {
     @Volatile private var running = false
     private var recorder: AudioRecord? = null
     private var player: AudioTrack? = null
-    private var audioManager: AudioManager? = null
-    private var previousSpeakerState = false
-    private var previousVolume = -1
     private var echoCanceler: AcousticEchoCanceler? = null
     private var noiseSuppressor: NoiseSuppressor? = null
     private var agc: AutomaticGainControl? = null
@@ -38,22 +34,12 @@ object AudioBridge {
         } catch (e: Exception) { Log.e(TAG, "BT audio decode error: ${e.message}") }
     }
 
-    fun init(am: AudioManager) { audioManager = am }
 
     fun start() {
         if (running) return
         running = true
-        try {
-            audioManager?.let {
-                previousSpeakerState = it.isSpeakerphoneOn
-                previousVolume = it.getStreamVolume(AudioManager.STREAM_VOICE_CALL)
-                it.mode = AudioManager.MODE_IN_COMMUNICATION
-                it.isSpeakerphoneOn = false
-                val maxVol = it.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
-                it.setStreamVolume(AudioManager.STREAM_VOICE_CALL, (maxVol * 0.6).toInt().coerceAtLeast(1), 0)
-            }
-        } catch (e: Exception) { Log.e(TAG, "Audio routing error: ${e.message}") }
-
+        // Server role: record mic and send to client only.
+        // Playback of client audio happens via onBluetoothAudio() into the player below.
         val outBuf = AudioTrack.getMinBufferSize(SAMPLE_RATE, CHANNEL_OUT, ENCODING)
         player = AudioTrack(
             AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
@@ -104,12 +90,6 @@ object AudioBridge {
         sendThread?.interrupt(); sendThread = null
         player?.stop(); player?.release(); player = null
         releaseAudioEffects()
-        try {
-            audioManager?.let {
-                it.isSpeakerphoneOn = previousSpeakerState
-                if (previousVolume >= 0) it.setStreamVolume(AudioManager.STREAM_VOICE_CALL, previousVolume, 0)
-            }
-        } catch (e: Exception) { Log.e(TAG, "Restore audio error: ${e.message}") }
         Log.d(TAG, "Audio bridge stopped")
     }
 }
