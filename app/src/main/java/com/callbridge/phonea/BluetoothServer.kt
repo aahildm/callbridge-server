@@ -78,26 +78,41 @@ object BluetoothServer {
         acceptThread?.start()
     }
 
+    @SuppressLint("MissingPermission")
     private fun handleClient(socket: BluetoothSocket) {
+        // Close server socket so it doesn't interfere with the accepted connection
+        try { serverSocket?.close() } catch (_: Exception) {}
+        serverSocket = null
+
         val conn = Connection(socket, socket.outputStream)
         connections.add(conn)
-        Thread {
-            try {
-                val reader = BufferedReader(InputStreamReader(socket.inputStream))
-                while (true) {
-                    val line = reader.readLine() ?: break
-                    onMessage(conn, line)
-                }
-            } catch (e: Exception) {
-                Log.d(TAG, "Client read loop ended: ${e.message}")
-            } finally {
-                connections.remove(conn)
-                authenticated.remove(conn)
-                // bluetooth disconnected
-                if (authenticated.isEmpty()) ConnectionStatus.setNone()
-                try { socket.close() } catch (_: Exception) {}
+        try {
+            val reader = BufferedReader(InputStreamReader(socket.inputStream))
+            while (true) {
+                val line = reader.readLine() ?: break
+                onMessage(conn, line)
             }
-        }.start()
+        } catch (e: Exception) {
+            Log.d(TAG, "Client read loop ended: ${e.message}")
+        } finally {
+            connections.remove(conn)
+            authenticated.remove(conn)
+            // bluetooth disconnected
+            if (authenticated.isEmpty()) ConnectionStatus.setNone()
+            try { socket.close() } catch (_: Exception) {}
+            // Re-open server socket for next client
+            if (running) {
+                try {
+                    val adapter = BluetoothAdapter.getDefaultAdapter()
+                    serverSocket = adapter?.listenUsingRfcommWithServiceRecord("CallBridge", SPP_UUID)
+                    listenState = "LISTENING"
+                    Log.d(TAG, "Re-opened BT server socket")
+                } catch (e: Exception) {
+                    listenState = "FAILED"
+                    Log.e(TAG, "Failed to re-open server socket: ${e.message}")
+                }
+            }
+        }
     }
 
     private fun onMessage(conn: Connection, message: String) {
