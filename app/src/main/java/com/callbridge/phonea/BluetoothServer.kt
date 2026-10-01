@@ -93,7 +93,7 @@ object BluetoothServer {
             } finally {
                 connections.remove(conn)
                 authenticated.remove(conn)
-                AudioBridge.bluetoothMode = false
+                // bluetooth disconnected
                 if (authenticated.isEmpty()) ConnectionStatus.setNone()
                 try { socket.close() } catch (_: Exception) {}
             }
@@ -113,7 +113,7 @@ object BluetoothServer {
             if (token == ProtocolHandler.SECRET) {
                 authenticated.add(conn)
                 sendTo(conn, "AUTH|OK")
-                AudioBridge.bluetoothMode = true
+                // bluetooth connected
                 ConnectionStatus.setBluetooth()
                 Log.d(TAG, "BT client authenticated")
             } else {

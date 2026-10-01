@@ -37,7 +37,6 @@ object ProtocolHandler {
     fun broadcast(event: String) {
         try {
             Log.d(TAG, "Broadcasting: $event")
-            SocketServer.sendEvent(event)
             BluetoothServer.sendEvent(event)
         } catch (e: Exception) {
             Log.e(TAG, "Broadcast failed: ${e.message}")
