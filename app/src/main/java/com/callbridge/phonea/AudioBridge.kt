@@ -79,16 +79,31 @@ object AudioBridge {
         } catch (e: Exception) { Log.e(TAG, "BT audio decode error: ${e.message}") }
     }
 
-    /** Boost 16-bit LE PCM in place with clipping, and track peak level of the raw input. */
+    // Adaptive gain: boosts quiet speech up to UPLINK_GAIN, but never pushes peaks past ~90%
+    @Volatile private var agcGain = 1.0f
+    private const val TARGET_PEAK = 29000f
+
+    /** Apply adaptive gain to 16-bit LE PCM in place (no clipping), and track raw peak level. */
     private fun applyGainAndMeasure(pcm: ByteArray) {
+        var chunkPeak = 1
         var i = 0
         while (i + 1 < pcm.size) {
             val sample = ((pcm[i + 1].toInt() shl 8) or (pcm[i].toInt() and 0xFF)).toShort().toInt()
             val abs = if (sample < 0) -sample else sample
-            if (abs > rxPeak) rxPeak = abs
-            val boosted = (sample * UPLINK_GAIN).toInt().coerceIn(-32768, 32767)
-            pcm[i] = (boosted and 0xFF).toByte()
-            pcm[i + 1] = ((boosted shr 8) and 0xFF).toByte()
+            if (abs > chunkPeak) chunkPeak = abs
+            i += 2
+        }
+        if (chunkPeak > rxPeak) rxPeak = chunkPeak
+        // Gain that would put this chunk's peak at the target, capped at UPLINK_GAIN
+        val wanted = (TARGET_PEAK / chunkPeak).coerceAtMost(UPLINK_GAIN)
+        // Drop instantly on loud input (no clipping), rise slowly on quiet input (no pumping)
+        agcGain = if (wanted < agcGain) wanted else agcGain + (wanted - agcGain) * 0.05f
+        i = 0
+        while (i + 1 < pcm.size) {
+            val sample = ((pcm[i + 1].toInt() shl 8) or (pcm[i].toInt() and 0xFF)).toShort().toInt()
+            val out = (sample * agcGain).toInt().coerceIn(-32768, 32767)
+            pcm[i] = (out and 0xFF).toByte()
+            pcm[i + 1] = ((out shr 8) and 0xFF).toByte()
             i += 2
         }
     }
