@@ -17,6 +17,8 @@ object ProtocolHandler {
                 message == "HOLD" -> OngoingCall.hold()
                 message == "UNHOLD" -> OngoingCall.unhold()
                 message == "GET_CALLLOG" -> CallLogHelper.sendRecentCallLog()
+                message == "GET_UPLINK_STATUS" -> AudioBridge.sendUplinkStatus()
+                message == "GET_CONTACTS" -> ContactsSender.sendContacts()
                 message.startsWith("DIAL|") -> {
                     val number = message.removePrefix("DIAL|")
                     DialHelper.placeCall(number)

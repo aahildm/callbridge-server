@@ -8,6 +8,8 @@ import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaRecorder
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Base64
 import android.util.Log
 
@@ -121,10 +123,21 @@ object AudioBridge {
         }
 
         Log.d(TAG, "Uplink route: $uplinkDesc (state=${track.state})")
-        BluetoothServer.sendEvent("STATUS|Uplink: $uplinkDesc")
 
         track.play()
         player = track
+
+        Handler(Looper.getMainLooper()).postDelayed({
+            BluetoothServer.sendEvent("STATUS|Uplink: $uplinkDesc")
+        }, 500)
+    }
+
+    fun sendUplinkStatus() {
+        val p = player ?: return
+        val desc = if (p.state == AudioTrack.STATE_INITIALIZED) {
+            if (audioManager()?.isSpeakerphoneOn == true) "speaker" else "direct-TX"
+        } else "TRACK_INIT_FAILED"
+        BluetoothServer.sendEvent("STATUS|Uplink: $desc")
     }
 
     private fun openRecorder(): Pair<AudioRecord, String>? {
@@ -182,7 +195,8 @@ object AudioBridge {
         sendThread?.interrupt(); sendThread = null
         try { player?.stop() } catch (_: Exception) {}
         player?.release(); player = null
-        // Restore audio mode
+        // Restore speakerphone and audio mode
+        try { audioManager()?.isSpeakerphoneOn = false } catch (_: Exception) {}
         try { audioManager()?.mode = prevAudioMode } catch (_: Exception) {}
         Log.d(TAG, "Audio bridge stopped")
     }

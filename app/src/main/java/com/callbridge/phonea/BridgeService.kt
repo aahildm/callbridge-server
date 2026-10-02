@@ -26,6 +26,7 @@ class BridgeService : Service() {
         DialHelper.appContext = applicationContext
         CallLogHelper.appContext = applicationContext
         ContactHelper.appContext = applicationContext
+        ContactsSender.appContext = applicationContext
         BluetoothServer.start()
         ConnectionStatus.onChange = { transport ->
             val text = when (transport) {
