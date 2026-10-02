@@ -29,6 +29,9 @@ object BluetoothServer {
     @Volatile var listenState: String = "NOT_STARTED"
         private set
 
+    @Volatile var connectedDeviceName: String? = null
+        private set
+
     private class Connection(val socket: BluetoothSocket, val out: OutputStream)
 
     private val connections = CopyOnWriteArraySet<Connection>()
@@ -85,6 +88,7 @@ object BluetoothServer {
         serverSocket = null
 
         val conn = Connection(socket, socket.outputStream)
+        try { connectedDeviceName = socket.remoteDevice?.name } catch (_: Exception) {}
         connections.add(conn)
         try {
             val reader = BufferedReader(InputStreamReader(socket.inputStream))
@@ -98,7 +102,10 @@ object BluetoothServer {
             connections.remove(conn)
             authenticated.remove(conn)
             // bluetooth disconnected
-            if (authenticated.isEmpty()) ConnectionStatus.setNone()
+            if (authenticated.isEmpty()) {
+                connectedDeviceName = null
+                ConnectionStatus.setNone()
+            }
             try { socket.close() } catch (_: Exception) {}
             // Re-open server socket for next client
             if (running) {

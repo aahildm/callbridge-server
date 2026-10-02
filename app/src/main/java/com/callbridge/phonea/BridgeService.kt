@@ -1,9 +1,11 @@
 package com.callbridge.phonea
 
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.bluetooth.BluetoothAdapter
 import android.content.Intent
 import android.media.AudioManager
 import android.os.Build
@@ -27,9 +29,9 @@ class BridgeService : Service() {
         BluetoothServer.start()
         ConnectionStatus.onChange = { transport ->
             val text = when (transport) {
-                "BLUETOOTH" -> "Phone B connected via Bluetooth"
-                "WIFI"      -> "Phone B connected via Wi-Fi"
-                else        -> "Waiting for Bluetooth connection"
+                "BLUETOOTH" -> "${remoteDeviceName()} connected"
+                "WIFI"      -> "${remoteDeviceName()} connected via Wi-Fi"
+                else        -> "${localName()} — waiting for connection"
             }
             updateNotification(text)
         }
@@ -77,18 +79,26 @@ class BridgeService : Service() {
         getSystemService(NotificationManager::class.java)?.notify(NOTIF_ID, notif)
     }
 
+    @SuppressLint("MissingPermission")
+    private fun localName(): String =
+        try { BluetoothAdapter.getDefaultAdapter()?.name ?: "CallBridge Server" }
+        catch (e: Exception) { "CallBridge Server" }
+
+    private fun remoteDeviceName(): String =
+        BluetoothServer.connectedDeviceName ?: "Phone B"
+
     private fun buildNotification(): Notification {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
                 .setContentTitle("CallBridge Active")
-                .setContentText("Waiting for Bluetooth connection")
+                .setContentText("${localName()} — waiting for connection")
                 .setSmallIcon(android.R.drawable.ic_menu_call)
                 .setOngoing(true).build()
         } else {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
                 .setContentTitle("CallBridge Active")
-                .setContentText("Waiting for Bluetooth connection")
+                .setContentText("${localName()} — waiting for connection")
                 .setSmallIcon(android.R.drawable.ic_menu_call)
                 .setOngoing(true).build()
         }
