@@ -1,0 +1,6 @@
+id=callbridge-server
+name=CallBridge Server (system app)
+version=1.0
+versionCode=1
+author=aahildm
+description=Installs CallBridge Server as a privileged app so it can capture call audio.

@@ -41,6 +41,7 @@ class CallService : InCallService() {
 
     override fun onCallAdded(call: Call) {
         Log.d(TAG, "Call added: ${call.details.handle}, state=${call.state}")
+        AudioBridge.init(this)
         OngoingCall.set(call)
         call.registerCallback(callCallback)
 

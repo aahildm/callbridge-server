@@ -39,3 +39,16 @@ jobs:
           name: CallBridgeServer-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
+
+      - name: Build Magisk module (privileged install)
+        run: |
+          mkdir -p magisk/system/priv-app/CallBridgeServer
+          cp app/build/outputs/apk/debug/app-debug.apk magisk/system/priv-app/CallBridgeServer/CallBridgeServer.apk
+          cd magisk && zip -r ../CallBridgeServer-magisk.zip . -x '.*'
+
+      - name: Upload Magisk module
+        uses: actions/upload-artifact@v4
+        with:
+          name: CallBridgeServer-magisk
+          path: CallBridgeServer-magisk.zip
+          retention-days: 30

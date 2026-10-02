@@ -1,10 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     package="com.callbridge.phonea">
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.CAPTURE_AUDIO_OUTPUT" tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_ROUTING" tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.MODIFY_PHONE_STATE" tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
