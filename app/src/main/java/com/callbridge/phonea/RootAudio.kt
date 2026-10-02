@@ -31,20 +31,28 @@ object RootAudio {
         }
     }
 
+    @Volatile private var cachedTinymix: String? = null
+
     private fun tinymixBin(): String? {
+        cachedTinymix?.let { return it }
         val path = su("command -v tinymix || ls /system/bin/tinymix /vendor/bin/tinymix /system/xbin/tinymix 2>/dev/null | head -1")
-        return path.lineSequence().firstOrNull { it.startsWith("/") }
+        return path.lineSequence().firstOrNull { it.startsWith("/") }?.also { cachedTinymix = it }
     }
 
-    fun enableIncallMusicMixer() = Thread { setIncallMixer(1) }.start()
     fun disableIncallMusicMixer() = Thread { setIncallMixer(0) }.start()
 
-    private fun setIncallMixer(v: Int) {
-        val tm = tinymixBin() ?: run { Log.w(TAG, "tinymix not found"); return }
+    /** Blocking. Returns true if at least one known incall-music control was set successfully. */
+    @Synchronized
+    fun setIncallMixer(v: Int): Boolean {
+        val tm = tinymixBin() ?: run { Log.w(TAG, "tinymix not found"); return false }
+        var ok = false
         for (ctl in INCALL_CONTROLS) {
             val r = su("$tm '$ctl' $v")
             Log.d(TAG, "set '$ctl'=$v -> $r")
+            if (!r.contains("Invalid", true) && !r.contains("ERR", true) && !r.contains("not found", true)
+                && !r.contains("Failed", true)) ok = true
         }
+        return ok
     }
 
     /** Collect audio-hardware info and send it to the client (which copies it to clipboard). */

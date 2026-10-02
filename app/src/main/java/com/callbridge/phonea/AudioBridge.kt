@@ -47,14 +47,18 @@ object AudioBridge {
     @Volatile private var rxChunks = 0
     @Volatile private var rxPeak = 0
     @Volatile private var writeErrors = 0
+    @Volatile private var mixerOk = false
+    @Volatile private var txRetries = 0
+    private const val MAX_TX_RETRIES = 5
     private val statsHandler = Handler(Looper.getMainLooper())
     private val statsRunnable = object : Runnable {
         override fun run() {
             if (!running) return
             val peakPct = rxPeak * 100 / 32767
-            BluetoothServer.sendEvent("STATUS|Uplink: $currentUplinkDesc · rx ${rxChunks} pkts · mic ${peakPct}%" +
+            BluetoothServer.sendEvent("STATUS|Uplink: $currentUplinkDesc · mixer ${if (mixerOk) "on" else "FAIL"} · rx ${rxChunks} pkts · mic ${peakPct}%" +
                 if (writeErrors > 0) " · ${writeErrors} write errs" else "")
             rxChunks = 0; rxPeak = 0; writeErrors = 0
+            watchdog()
             statsHandler.postDelayed(this, 3000)
         }
     }
@@ -92,13 +96,54 @@ object AudioBridge {
     fun start() {
         if (running) return
         running = true
-        startPlayer()
+        txRetries = 0
+        Thread {
+            prepareRoute()
+            if (running) Handler(Looper.getMainLooper()).post { if (running && player == null) startPlayer() }
+        }.start()
         sendThread = Thread { captureLoop() }.also { it.isDaemon = true; it.start() }
         Log.d(TAG, "Audio bridge started")
     }
 
     private fun audioManager(): AudioManager? =
         appContext?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+
+    /**
+     * Run BEFORE creating the track (blocking, off main thread):
+     *  1. wait until the call audio is actually up (MODE_IN_CALL), up to 3 s
+     *  2. flip the root incall-music mixer switch and wait for it to finish
+     * Doing these in the background in parallel with playback is what made it work only sometimes.
+     */
+    private fun prepareRoute() {
+        val am = audioManager()
+        val deadline = System.currentTimeMillis() + 3000
+        while (running && am != null && am.mode != AudioManager.MODE_IN_CALL && System.currentTimeMillis() < deadline) {
+            try { Thread.sleep(100) } catch (_: InterruptedException) { return }
+        }
+        try { am?.setParameters("incall_music_enabled=true") } catch (_: Exception) {}
+        mixerOk = RootAudio.setIncallMixer(1)
+        Log.d(TAG, "prepareRoute: mode=${am?.mode} mixerOk=$mixerOk")
+    }
+
+    /** Every 3 s during a call: keep the mixer switch on and recover a lost/ignored TX route. */
+    private fun watchdog() {
+        Thread {
+            if (!running) return@Thread
+            mixerOk = RootAudio.setIncallMixer(1)
+            val p = player
+            val routedOk = p != null && (Build.VERSION.SDK_INT < 24 || p.routedDevice?.type == TYPE_TELEPHONY)
+            if (!routedOk && txRetries < MAX_TX_RETRIES) {
+                txRetries++
+                Log.w(TAG, "watchdog: TX route missing, retry $txRetries")
+                Handler(Looper.getMainLooper()).post {
+                    if (!running) return@post
+                    player?.let { try { it.stop() } catch (_: Exception) {}; it.release() }
+                    player = null
+                    startPlayer()
+                }
+            }
+        }.start()
+    }
 
     private fun startPlayer() {
         val am = audioManager()
@@ -142,8 +187,6 @@ object AudioBridge {
         // Route ONLY to the telephony TX device (Qualcomm in-call music path).
         // Never to speaker or earpiece — the client's voice must not be audible near this phone.
         if (Build.VERSION.SDK_INT >= 23 && am != null) {
-            try { am.setParameters("incall_music_enabled=true") } catch (_: Exception) {}
-            RootAudio.enableIncallMusicMixer()
             val tx = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
                 .firstOrNull { it.type == TYPE_TELEPHONY }
             if (tx != null && track.setPreferredDevice(tx)) uplinkDesc = "direct-TX"
@@ -171,7 +214,7 @@ object AudioBridge {
                     Log.w(TAG, "TX not honored (routed type=${routed?.type}); stopping playback")
                     try { p.stop() } catch (_: Exception) {}
                     p.release(); player = null
-                    currentUplinkDesc = "TX ignored (type ${routed?.type ?: "none"}) — voice not sent"
+                    currentUplinkDesc = "TX ignored (type ${routed?.type ?: "none"}) — retrying"
                 }
             }
             BluetoothServer.sendEvent("STATUS|Uplink: $currentUplinkDesc")
