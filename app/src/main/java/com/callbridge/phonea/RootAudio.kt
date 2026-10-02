@@ -32,9 +32,21 @@ object RootAudio {
     }
 
     @Volatile private var cachedTinymix: String? = null
+    private var bundledTinymix: String? = null
 
-    private fun tinymixBin(): String? {
+    /** Unpack the tinymix binary bundled in the APK (built in CI) so root can run it. */
+    fun init(context: android.content.Context) {
+        try {
+            val f = java.io.File(context.filesDir, "tinymix")
+            context.assets.open("tinymix").use { inp -> f.outputStream().use { inp.copyTo(it) } }
+            f.setExecutable(true, false)
+            bundledTinymix = f.absolutePath
+        } catch (e: Exception) { Log.w(TAG, "No bundled tinymix: ${e.message}") }
+    }
+
+    fun tinymixBin(): String? {
         cachedTinymix?.let { return it }
+        bundledTinymix?.let { cachedTinymix = it; return it }
         val path = su("command -v tinymix || ls /system/bin/tinymix /vendor/bin/tinymix /system/xbin/tinymix 2>/dev/null | head -1")
         return path.lineSequence().firstOrNull { it.startsWith("/") }?.also { cachedTinymix = it }
     }
@@ -66,7 +78,7 @@ object RootAudio {
         section("tinymix bin", "command -v tinymix tinyplay tinypcminfo; ls /system/bin/tiny* /vendor/bin/tiny* 2>/dev/null")
         section("pcm devices", "cat /proc/asound/pcm")
         section("incall/voice mixer ctls",
-            "TM=\$(command -v tinymix || echo /system/bin/tinymix); \$TM 2>/dev/null | grep -i -E 'incall|voice_tx|voip|multimedia2 |voc_rec' | head -40")
+            "${tinymixBin() ?: "tinymix"} 2>&1 | grep -i -E 'incall|voice|farend|multimedia9|multimedia2 ' | head -60")
         section("mixer_paths incall",
             "for f in /vendor/etc/mixer_paths*.xml /system/etc/mixer_paths*.xml /system/vendor/etc/mixer_paths*.xml; do [ -f \$f ] && echo \"# \$f\" && grep -i -A4 'incall-music' \$f | head -30; done")
         section("policy incall",

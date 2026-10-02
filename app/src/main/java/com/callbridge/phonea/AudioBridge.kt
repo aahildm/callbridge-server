@@ -48,6 +48,7 @@ object AudioBridge {
     @Volatile private var rxPeak = 0
     @Volatile private var writeErrors = 0
     @Volatile private var mixerOk = false
+    @Volatile private var rootMode = false
     @Volatile private var txRetries = 0
     private const val MAX_TX_RETRIES = 5
     private val statsHandler = Handler(Looper.getMainLooper())
@@ -63,7 +64,10 @@ object AudioBridge {
         }
     }
 
-    fun init(context: Context) { appContext = context.applicationContext }
+    fun init(context: Context) {
+        appContext = context.applicationContext
+        RootAudio.init(context.applicationContext)
+    }
 
     /** Uplink is direct-to-call only. Speaker/acoustic fallback was removed for privacy. */
     fun uplinkMode(): String = "tx"
@@ -74,8 +78,12 @@ object AudioBridge {
             val pcm = Base64.decode(base64Chunk, Base64.NO_WRAP)
             applyGainAndMeasure(pcm)
             rxChunks++
-            val written = player?.write(pcm, 0, pcm.size) ?: -1
-            if (written < 0) { writeErrors++; Log.w(TAG, "AudioTrack write returned $written") }
+            if (rootMode) {
+                if (!RootUplink.write(pcm)) writeErrors++
+            } else {
+                val written = player?.write(pcm, 0, pcm.size) ?: -1
+                if (written < 0) { writeErrors++; Log.w(TAG, "AudioTrack write returned $written") }
+            }
         } catch (e: Exception) { Log.e(TAG, "BT audio decode error: ${e.message}") }
     }
 
@@ -114,7 +122,22 @@ object AudioBridge {
         txRetries = 0
         Thread {
             prepareRoute()
-            if (running) Handler(Looper.getMainLooper()).post { if (running && player == null) startPlayer() }
+            if (!running) return@Thread
+            // Preferred: private root path straight into the modem's in-call channel
+            if (RootUplink.start()) {
+                rootMode = true; mixerOk = true
+                currentUplinkDesc = "root in-call"
+                BluetoothServer.sendEvent("STATUS|Uplink: $currentUplinkDesc")
+                Handler(Looper.getMainLooper()).post {
+                    statsHandler.removeCallbacks(statsRunnable)
+                    statsHandler.postDelayed(statsRunnable, 3000)
+                }
+            } else {
+                rootMode = false; mixerOk = false
+                Log.w(TAG, "Root uplink failed: ${RootUplink.lastError}")
+                BluetoothServer.sendEvent("STATUS|Root uplink failed: ${RootUplink.lastError}")
+                Handler(Looper.getMainLooper()).post { if (running && player == null) startPlayer() }
+            }
         }.start()
         sendThread = Thread { captureLoop() }.also { it.isDaemon = true; it.start() }
         Log.d(TAG, "Audio bridge started")
@@ -136,15 +159,21 @@ object AudioBridge {
             try { Thread.sleep(100) } catch (_: InterruptedException) { return }
         }
         try { am?.setParameters("incall_music_enabled=true") } catch (_: Exception) {}
-        mixerOk = RootAudio.setIncallMixer(1)
-        Log.d(TAG, "prepareRoute: mode=${am?.mode} mixerOk=$mixerOk")
+        Log.d(TAG, "prepareRoute: mode=${am?.mode}")
     }
 
     /** Every 3 s during a call: keep the mixer switch on and recover a lost/ignored TX route. */
     private fun watchdog() {
         Thread {
             if (!running) return@Thread
-            mixerOk = RootAudio.setIncallMixer(1)
+            if (rootMode) {
+                if (!RootUplink.active && txRetries < MAX_TX_RETRIES) {
+                    txRetries++
+                    mixerOk = RootUplink.start()
+                    if (!mixerOk) currentUplinkDesc = "root in-call (restart failed: ${RootUplink.lastError})"
+                }
+                return@Thread
+            }
             val p = player
             val routedOk = p != null && (Build.VERSION.SDK_INT < 24 || p.routedDevice?.type == TYPE_TELEPHONY)
             if (!routedOk && txRetries < MAX_TX_RETRIES) {
@@ -305,7 +334,8 @@ object AudioBridge {
         sendThread?.interrupt(); sendThread = null
         try { player?.stop() } catch (_: Exception) {}
         player?.release(); player = null
-        RootAudio.disableIncallMusicMixer()
+        RootUplink.stop()
+        rootMode = false
         try { audioManager()?.mode = prevAudioMode } catch (_: Exception) {}
         Log.d(TAG, "Audio bridge stopped")
     }
