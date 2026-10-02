@@ -27,7 +27,7 @@ jobs:
           CC="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang"
           cd /tmp/tinyalsa
           $CC -O2 -static -Iinclude -o tinymix \
-            utils/tinymix.c src/mixer.c src/mixer_hw.c src/pcm.c src/pcm_hw.c
+            utils/tinymix.c src/mixer.c src/mixer_hw.c src/pcm.c src/pcm_hw.c src/snd_card_plugin.c src/limits.c
           file tinymix
           mkdir -p $GITHUB_WORKSPACE/app/src/main/assets
           cp tinymix $GITHUB_WORKSPACE/app/src/main/assets/tinymix
