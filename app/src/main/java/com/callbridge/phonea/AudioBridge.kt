@@ -41,6 +41,7 @@ object AudioBridge {
     private var recorder: AudioRecord? = null
     private var player: AudioTrack? = null
     private var prevAudioMode = AudioManager.MODE_NORMAL
+    @Volatile private var currentUplinkDesc = "unknown"
 
     fun init(context: Context) { appContext = context.applicationContext }
 
@@ -126,6 +127,7 @@ object AudioBridge {
 
         track.play()
         player = track
+        currentUplinkDesc = uplinkDesc
 
         Handler(Looper.getMainLooper()).postDelayed({
             BluetoothServer.sendEvent("STATUS|Uplink: $uplinkDesc")
@@ -133,10 +135,12 @@ object AudioBridge {
     }
 
     fun sendUplinkStatus() {
-        val p = player ?: return
-        val desc = if (p.state == AudioTrack.STATE_INITIALIZED) {
-            if (audioManager()?.isSpeakerphoneOn == true) "speaker" else "direct-TX"
-        } else "TRACK_INIT_FAILED"
+        val p = player
+        val desc = when {
+            p == null -> "not-started"
+            p.state != AudioTrack.STATE_INITIALIZED -> "TRACK_INIT_FAILED"
+            else -> currentUplinkDesc
+        }
         BluetoothServer.sendEvent("STATUS|Uplink: $desc")
     }
 
@@ -192,6 +196,7 @@ object AudioBridge {
     fun stop() {
         if (!running) return
         running = false
+        currentUplinkDesc = "unknown"
         sendThread?.interrupt(); sendThread = null
         try { player?.stop() } catch (_: Exception) {}
         player?.release(); player = null
