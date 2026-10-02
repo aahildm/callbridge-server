@@ -15,7 +15,9 @@ class CallService : InCallService() {
             Log.d(TAG, "Call state changed: $state")
             when (state) {
                 Call.STATE_RINGING -> {
-                    ProtocolHandler.broadcast("RING|${OngoingCall.getCallerNumber()}")
+                    val num = OngoingCall.getCallerNumber()
+                    val name = ContactHelper.lookupName(num)
+                    ProtocolHandler.broadcast("RING|$num|$name")
                 }
                 Call.STATE_DIALING -> {
                     ProtocolHandler.broadcast("STATE|DIALING")
@@ -46,7 +48,11 @@ class CallService : InCallService() {
         call.registerCallback(callCallback)
 
         when (call.state) {
-            Call.STATE_RINGING -> ProtocolHandler.broadcast("RING|${OngoingCall.getCallerNumber()}")
+            Call.STATE_RINGING -> {
+                val num = OngoingCall.getCallerNumber()
+                val name = ContactHelper.lookupName(num)
+                ProtocolHandler.broadcast("RING|$num|$name")
+            }
             Call.STATE_DIALING -> ProtocolHandler.broadcast("STATE|DIALING")
             Call.STATE_ACTIVE -> {
                 ProtocolHandler.broadcast("STATE|ACTIVE")
