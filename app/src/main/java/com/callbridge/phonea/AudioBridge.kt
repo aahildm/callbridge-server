@@ -42,6 +42,23 @@ object AudioBridge {
     private var player: AudioTrack? = null
     private var prevAudioMode = AudioManager.MODE_NORMAL
     @Volatile private var currentUplinkDesc = "unknown"
+    // Software gain applied to client mic audio before injection (incall paths are often attenuated)
+    private const val UPLINK_GAIN = 3.0f
+    // Diagnostics
+    @Volatile private var rxChunks = 0
+    @Volatile private var rxPeak = 0
+    @Volatile private var writeErrors = 0
+    private val statsHandler = Handler(Looper.getMainLooper())
+    private val statsRunnable = object : Runnable {
+        override fun run() {
+            if (!running) return
+            val peakPct = rxPeak * 100 / 32767
+            BluetoothServer.sendEvent("STATUS|Uplink: $currentUplinkDesc · rx ${rxChunks} pkts · mic ${peakPct}%" +
+                if (writeErrors > 0) " · ${writeErrors} write errs" else "")
+            rxChunks = 0; rxPeak = 0; writeErrors = 0
+            statsHandler.postDelayed(this, 3000)
+        }
+    }
 
     fun init(context: Context) { appContext = context.applicationContext }
 
@@ -49,9 +66,25 @@ object AudioBridge {
         if (!running) return
         try {
             val pcm = Base64.decode(base64Chunk, Base64.NO_WRAP)
+            applyGainAndMeasure(pcm)
+            rxChunks++
             val written = player?.write(pcm, 0, pcm.size) ?: -1
-            if (written < 0) Log.w(TAG, "AudioTrack write returned $written")
+            if (written < 0) { writeErrors++; Log.w(TAG, "AudioTrack write returned $written") }
         } catch (e: Exception) { Log.e(TAG, "BT audio decode error: ${e.message}") }
+    }
+
+    /** Boost 16-bit LE PCM in place with clipping, and track peak level of the raw input. */
+    private fun applyGainAndMeasure(pcm: ByteArray) {
+        var i = 0
+        while (i + 1 < pcm.size) {
+            val sample = ((pcm[i + 1].toInt() shl 8) or (pcm[i].toInt() and 0xFF)).toShort().toInt()
+            val abs = if (sample < 0) -sample else sample
+            if (abs > rxPeak) rxPeak = abs
+            val boosted = (sample * UPLINK_GAIN).toInt().coerceIn(-32768, 32767)
+            pcm[i] = (boosted and 0xFF).toByte()
+            pcm[i + 1] = ((boosted shr 8) and 0xFF).toByte()
+            i += 2
+        }
     }
 
     fun start() {
@@ -132,9 +165,23 @@ object AudioBridge {
         player = track
         currentUplinkDesc = uplinkDesc
 
+        // setPreferredDevice() can return true even when the ROM ignores it.
+        // After playback starts, check where audio is REALLY going; if not TX, fall back to speaker.
         Handler(Looper.getMainLooper()).postDelayed({
-            BluetoothServer.sendEvent("STATUS|Uplink: $uplinkDesc")
-        }, 500)
+            val p = player ?: return@postDelayed
+            if (Build.VERSION.SDK_INT >= 24 && currentUplinkDesc == "direct-TX") {
+                val routed = p.routedDevice
+                if (routed == null || routed.type != TYPE_TELEPHONY) {
+                    Log.w(TAG, "TX not honored, actually routed to type=${routed?.type}; falling back to speaker")
+                    try { p.setPreferredDevice(null) } catch (_: Exception) {}
+                    try { am?.isSpeakerphoneOn = true } catch (_: Exception) {}
+                    currentUplinkDesc = "speaker (TX ignored, was type ${routed?.type ?: "none"})"
+                }
+            }
+            BluetoothServer.sendEvent("STATUS|Uplink: $currentUplinkDesc")
+            statsHandler.removeCallbacks(statsRunnable)
+            statsHandler.postDelayed(statsRunnable, 3000)
+        }, 700)
     }
 
     fun sendUplinkStatus() {
@@ -199,6 +246,7 @@ object AudioBridge {
     fun stop() {
         if (!running) return
         running = false
+        statsHandler.removeCallbacks(statsRunnable)
         currentUplinkDesc = "unknown"
         sendThread?.interrupt(); sendThread = null
         try { player?.stop() } catch (_: Exception) {}
