@@ -25,6 +25,14 @@ class BridgeService : Service() {
         CallLogHelper.appContext = applicationContext
         ContactHelper.appContext = applicationContext
         BluetoothServer.start()
+        ConnectionStatus.onChange = { transport ->
+            val text = when (transport) {
+                "BLUETOOTH" -> "Phone B connected via Bluetooth"
+                "WIFI"      -> "Phone B connected via Wi-Fi"
+                else        -> "Waiting for Bluetooth connection"
+            }
+            updateNotification(text)
+        }
         Log.d(TAG, "BridgeService started (Bluetooth-only mode)")
     }
 
@@ -34,6 +42,7 @@ class BridgeService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        ConnectionStatus.onChange = null
         BluetoothServer.stop()
         AudioBridge.stop()
         Log.d(TAG, "BridgeService stopped")
@@ -48,6 +57,24 @@ class BridgeService : Service() {
             ).apply { description = "CallBridge active"; setShowBadge(false) }
             getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
         }
+    }
+
+    private fun updateNotification(text: String) {
+        val notif = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, CHANNEL_ID)
+                .setContentTitle("CallBridge Active")
+                .setContentText(text)
+                .setSmallIcon(android.R.drawable.ic_menu_call)
+                .setOngoing(true).build()
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+                .setContentTitle("CallBridge Active")
+                .setContentText(text)
+                .setSmallIcon(android.R.drawable.ic_menu_call)
+                .setOngoing(true).build()
+        }
+        getSystemService(NotificationManager::class.java)?.notify(NOTIF_ID, notif)
     }
 
     private fun buildNotification(): Notification {
