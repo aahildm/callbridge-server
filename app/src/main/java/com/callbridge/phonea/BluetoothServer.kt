@@ -155,6 +155,7 @@ object BluetoothServer {
         }
     }
 
+    @Synchronized
     fun sendEvent(event: String) {
         val dead = mutableListOf<Connection>()
         authenticated.forEach { conn ->
