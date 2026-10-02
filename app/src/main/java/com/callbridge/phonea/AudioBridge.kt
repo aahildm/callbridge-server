@@ -43,7 +43,7 @@ object AudioBridge {
     private var prevAudioMode = AudioManager.MODE_NORMAL
     @Volatile private var currentUplinkDesc = "unknown"
     // Software gain applied to client mic audio before injection (incall paths are often attenuated)
-    private const val UPLINK_GAIN = 3.0f
+    private const val UPLINK_GAIN = 4.0f
     // Diagnostics
     @Volatile private var rxChunks = 0
     @Volatile private var rxPeak = 0
@@ -61,6 +61,27 @@ object AudioBridge {
     }
 
     fun init(context: Context) { appContext = context.applicationContext }
+
+    /** "speaker" (default, works everywhere) or "tx" (direct injection; ROM-dependent). */
+    fun uplinkMode(): String =
+        appContext?.getSharedPreferences("callbridge", Context.MODE_PRIVATE)
+            ?.getString("uplink_mode", "speaker") ?: "speaker"
+
+    fun setUplinkMode(mode: String) {
+        if (mode != "speaker" && mode != "tx") return
+        appContext?.getSharedPreferences("callbridge", Context.MODE_PRIVATE)
+            ?.edit()?.putString("uplink_mode", mode)?.apply()
+        BluetoothServer.sendEvent("UPLINK_MODE|$mode")
+        // Apply immediately if a call is in progress
+        if (running) {
+            Handler(Looper.getMainLooper()).post {
+                try { player?.stop() } catch (_: Exception) {}
+                player?.release(); player = null
+                try { audioManager()?.isSpeakerphoneOn = false } catch (_: Exception) {}
+                startPlayer()
+            }
+        }
+    }
 
     fun onBluetoothAudio(base64Chunk: String) {
         if (!running) return
@@ -138,7 +159,9 @@ object AudioBridge {
         var uplinkDesc = "speaker"
 
         // Attempt 1: route directly to telephony TX (Qualcomm incall music path)
-        if (Build.VERSION.SDK_INT >= 23 && am != null) {
+        if (uplinkMode() == "tx" && Build.VERSION.SDK_INT >= 23 && am != null) {
+            // Some Qualcomm HALs need this before the incall-music mixer path is used
+            try { am.setParameters("incall_music_enabled=true") } catch (_: Exception) {}
             val tx = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
                 .firstOrNull { it.type == TYPE_TELEPHONY }
             if (tx != null && track.setPreferredDevice(tx)) {

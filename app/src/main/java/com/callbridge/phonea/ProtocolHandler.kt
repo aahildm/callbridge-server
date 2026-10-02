@@ -19,6 +19,8 @@ object ProtocolHandler {
                 message == "GET_CALLLOG" -> CallLogHelper.sendRecentCallLog()
                 message == "GET_UPLINK_STATUS" -> AudioBridge.sendUplinkStatus()
                 message == "GET_CONTACTS" -> ContactsSender.sendContacts()
+                message == "GET_UPLINK_MODE" -> BluetoothServer.sendEvent("UPLINK_MODE|${AudioBridge.uplinkMode()}")
+                message.startsWith("UPLINK_MODE|") -> AudioBridge.setUplinkMode(message.removePrefix("UPLINK_MODE|"))
                 message.startsWith("DIAL|") -> {
                     val number = message.removePrefix("DIAL|")
                     DialHelper.placeCall(number)
