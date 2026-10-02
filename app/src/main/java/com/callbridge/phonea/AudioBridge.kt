@@ -91,6 +91,9 @@ object AudioBridge {
                 .build(),
             outBuf, AudioTrack.MODE_STREAM, sessionId)
 
+        // Max volume so the injected audio is as loud as possible into the TX path
+        track.setVolume(AudioTrack.getMaxVolume())
+
         // Check the track was actually initialised before trying to route it
         if (track.state != AudioTrack.STATE_INITIALIZED) {
             Log.e(TAG, "AudioTrack failed to initialise (state=${track.state}), releasing")
