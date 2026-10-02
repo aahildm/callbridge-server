@@ -25,7 +25,6 @@ import android.util.Log
  *      This injects audio directly into the TX path so the remote caller hears it.
  *   2. Fallback: set AudioManager to MODE_IN_CALL + earpiece, play via VOICE_COMMUNICATION
  *      usage. On some devices this bleeds into the mic and therefore into the uplink.
- *   3. Last resort: speaker so the OnePlus 2's own mic picks up the Poco's voice.
  */
 object AudioBridge {
     private const val TAG = "CallBridge-Audio"
@@ -62,26 +61,8 @@ object AudioBridge {
 
     fun init(context: Context) { appContext = context.applicationContext }
 
-    /** "speaker" (default, works everywhere) or "tx" (direct injection; ROM-dependent). */
-    fun uplinkMode(): String =
-        appContext?.getSharedPreferences("callbridge", Context.MODE_PRIVATE)
-            ?.getString("uplink_mode", "speaker") ?: "speaker"
-
-    fun setUplinkMode(mode: String) {
-        if (mode != "speaker" && mode != "tx") return
-        appContext?.getSharedPreferences("callbridge", Context.MODE_PRIVATE)
-            ?.edit()?.putString("uplink_mode", mode)?.apply()
-        BluetoothServer.sendEvent("UPLINK_MODE|$mode")
-        // Apply immediately if a call is in progress
-        if (running) {
-            Handler(Looper.getMainLooper()).post {
-                try { player?.stop() } catch (_: Exception) {}
-                player?.release(); player = null
-                try { audioManager()?.isSpeakerphoneOn = false } catch (_: Exception) {}
-                startPlayer()
-            }
-        }
-    }
+    /** Uplink is direct-to-call only. Speaker/acoustic fallback was removed for privacy. */
+    fun uplinkMode(): String = "tx"
 
     fun onBluetoothAudio(base64Chunk: String) {
         if (!running) return
@@ -156,49 +137,41 @@ object AudioBridge {
             return
         }
 
-        var uplinkDesc = "speaker"
+        var uplinkDesc = "TX unavailable"
 
-        // Attempt 1: route directly to telephony TX (Qualcomm incall music path)
-        if (uplinkMode() == "tx" && Build.VERSION.SDK_INT >= 23 && am != null) {
-            // Some Qualcomm HALs need this before the incall-music mixer path is used
+        // Route ONLY to the telephony TX device (Qualcomm in-call music path).
+        // Never to speaker or earpiece — the client's voice must not be audible near this phone.
+        if (Build.VERSION.SDK_INT >= 23 && am != null) {
             try { am.setParameters("incall_music_enabled=true") } catch (_: Exception) {}
+            RootAudio.enableIncallMusicMixer()
             val tx = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
                 .firstOrNull { it.type == TYPE_TELEPHONY }
-            if (tx != null && track.setPreferredDevice(tx)) {
-                uplinkDesc = "direct-TX"
-                Log.d(TAG, "Uplink routed to TYPE_TELEPHONY device: ${tx.productName}")
-            }
+            if (tx != null && track.setPreferredDevice(tx)) uplinkDesc = "direct-TX"
         }
 
-        if (uplinkDesc == "speaker") {
-            // Fallback: play client audio through the loudspeaker.
-            // The OnePlus 2's physical mic then picks it up and feeds it into the call's
-            // uplink path (acoustic coupling). Quality is lower but it works.
-            try {
-                am?.isSpeakerphoneOn = true
-                Log.d(TAG, "Speaker fallback enabled for uplink injection")
-            } catch (e: Exception) {
-                Log.w(TAG, "isSpeakerphoneOn=true failed: ${e.message}")
-            }
+        if (uplinkDesc != "direct-TX") {
+            // Refuse to play anywhere else
+            track.release()
+            currentUplinkDesc = uplinkDesc
+            BluetoothServer.sendEvent("STATUS|Uplink: $uplinkDesc — voice not sent (private)")
+            return
         }
-
-        Log.d(TAG, "Uplink route: $uplinkDesc (state=${track.state})")
 
         track.play()
         player = track
         currentUplinkDesc = uplinkDesc
 
-        // setPreferredDevice() can return true even when the ROM ignores it.
-        // After playback starts, check where audio is REALLY going; if not TX, fall back to speaker.
+        // setPreferredDevice() can return true even when ignored. If audio isn't really going
+        // to TX, stop playback entirely rather than let it leak out of a speaker/earpiece.
         Handler(Looper.getMainLooper()).postDelayed({
             val p = player ?: return@postDelayed
-            if (Build.VERSION.SDK_INT >= 24 && currentUplinkDesc == "direct-TX") {
+            if (Build.VERSION.SDK_INT >= 24) {
                 val routed = p.routedDevice
                 if (routed == null || routed.type != TYPE_TELEPHONY) {
-                    Log.w(TAG, "TX not honored, actually routed to type=${routed?.type}; falling back to speaker")
-                    try { p.setPreferredDevice(null) } catch (_: Exception) {}
-                    try { am?.isSpeakerphoneOn = true } catch (_: Exception) {}
-                    currentUplinkDesc = "speaker (TX ignored, was type ${routed?.type ?: "none"})"
+                    Log.w(TAG, "TX not honored (routed type=${routed?.type}); stopping playback")
+                    try { p.stop() } catch (_: Exception) {}
+                    p.release(); player = null
+                    currentUplinkDesc = "TX ignored (type ${routed?.type ?: "none"}) — voice not sent"
                 }
             }
             BluetoothServer.sendEvent("STATUS|Uplink: $currentUplinkDesc")
@@ -274,8 +247,7 @@ object AudioBridge {
         sendThread?.interrupt(); sendThread = null
         try { player?.stop() } catch (_: Exception) {}
         player?.release(); player = null
-        // Restore speakerphone and audio mode
-        try { audioManager()?.isSpeakerphoneOn = false } catch (_: Exception) {}
+        RootAudio.disableIncallMusicMixer()
         try { audioManager()?.mode = prevAudioMode } catch (_: Exception) {}
         Log.d(TAG, "Audio bridge stopped")
     }
